@@ -1,0 +1,228 @@
+---
+title: "Lab I: Dynamic Inventory Planning"
+author: "Vijay Penmetsa"
+date: "week 02 session 02"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+In this lab, we will build a linear regression-based dynamic inventory planning system for a German retail chain.
+
+## 1. Read in data and data wrangling
+Let's read in the data from `Bakery_sales_data.csv` and further conduct some data manipulation.
+```{r chunk1}
+total_data <- read.csv("./Bakery_sales_data.csv", header=T, stringsAsFactors=T)
+str(total_data)
+```
+
+We first reset the format of the `date` variable in `total_data` using `as.Date` function.
+```{r chunk2}
+total_data$date <- as.Date(total_data$date, format="%m/%d/%Y")
+str(total_data)
+```
+
+Let's reset the reference level of the categorical variables in the data set using the `R` function `factor()` and its argument `levels`. In addition, note that the `store_id` variable in `total_data` should be categorical variable as it is an identifier of each store.
+```{r chunk3}
+total_data$day <- factor(total_data$day, levels=c('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'))
+total_data$month <- factor(total_data$month, levels=c('January','February','March','April','May','June','July',
+                                                      'August','September','October','November','December'))
+total_data$store_type <- factor(total_data$store_type, levels=c('rural','suburb','urban'))
+total_data$store_id <- factor(total_data$store_id)
+```
+
+### 1.1 Data exploration and visualization
+**Exercise 1** Create a scatter plot between `sales` and `promotion`. Note that `promotion` is a numerical predictor but only takes a finite number of values. Thus, let's further make a boxplot between `sales` and `promotion`, which is more informative.
+```{r Q1}
+# Exercise 1 code
+plot(total_data$promotion, total_data$sales)
+
+boxplot(sales~promotion, data = total_data, xlab = "Promotion", ylab = "Sales")
+```
+Answer: Box-plot is more informative.
+
+**Exercise 2** Create a boxplot between `sales` and `store type`. Which type of store has the highest sales on average?
+```{r Q2}
+# Exercise 2 code
+boxplot(sales~store_type, data = total_data, xlab = "Store Type", ylab = "Sales")
+```
+Answer: Urban stores have highest sales on average.
+
+**Exercise 3** Use appropriate visualization tools to investigate the relationship between `sales` and `bad_weather`, `sales` and `day`, `sales` and `month`.
+```{r Q3}
+# Exercise 3 code
+boxplot(sales~bad_weather, data = total_data)
+boxplot(sales~day, data = total_data)
+boxplot(sales~month, data = total_data)
+```
+
+
+**Exercise 4** Plot the histogram of `sales`. Do we need a log transformation? If so, further create a `log_sales` variable in the `R` object `total_data` using the formula $\widetilde{Y}=\log(Y+1).$
+```{r Q4}
+# Exercise 4 code
+hist(total_data$sales)
+
+total_data$log_sales <- log(total_data$sales + 1)
+hist(total_data$log_sales)
+```
+
+
+## 2. Linear Regression based forecasting
+### 2.1 Data partition
+Note that for time series forecasting, data partition should respect the time order as we would like to evaluate the performance of statistical models on the most recent data. 
+```{r DataPartition}
+train_indices <- which(total_data$date<='2016-12-31') # We create 4 year training data and leave 1 year for test
+train_data <- total_data[train_indices,]
+test_data <- total_data[-train_indices,]
+```
+
+### 2.2 Linear regression estimation
+**Exercise 5** Estimate a linear regression model with only intercept and name it `lm0`. Estimate a linear regression model with **five** predictors `store_type`, `bad_weather`, `promotion`, `day` and `month` and name it `lm_full`. Note the dependent variable should be `log_sales`.
+```{r Q5}
+# Exercise 5 code
+lm0 <- lm(log_sales ~ 1, data = train_data)
+summary(lm0)$r.sq
+
+lm_full <- lm(log_sales ~ 
+                store_type 
+              + bad_weather 
+              + promotion 
+              + day 
+              + month, 
+              data = train_data)
+
+summary(lm_full)
+```
+
+**Exercise 6** What is the $R^2$ of `lm_full`? What is the impact of `bad_weather` to `log_sales` and thus to `sales`? What is the $R^2$ of `lm0`? Why? 
+
+```{r}
+summary(lm_full)$r.sq
+bad_weather_coeff_log <- lm_full$coefficients[4]
+exp(bad_weather_coeff_log) - 1
+
+summary(lm0)$r.sq
+```
+
+
+Answer:
+For each unit increase in bad_weather, log of sales decreases by a factor of 0.22.
+For each unit increase in bad_weather, sales decreases by a factor of 0.199.
+
+
+### 2.2.1 Backward selection
+**Exercise 7** It seems that some of the predictors are not statistically significant. First, determine the number of observations in the training data. Second, let's do a backward selection via BIC using the `step()` function and store the final selected model as `lm_bwd`. Make sure you use the **correct** number for the argument `k` in the `step()` function.
+```{r}
+# Exercise 7 code
+dim(train_data)[1] # Number of observations
+lm_bwd <- step(lm_full, direction = "backward", k = log(dim(train_data)[1]))
+```
+
+**Exercise 8** What is the $R^2$ of `lm_bwd`? Which variable is removed during the backward selection?
+
+```{r}
+summary(lm_bwd)$r.sq
+```
+Answer: Month was the removed variable
+
+### 2.3 Model evaluation (out-of-sample)
+Let's now evaluate the prediction performance of the three linear models `lm0`, `lm_full` and `lm_bwd` on the test data. First, let's generate the prediction by each model and store them in `pred0`, `pred_full` and `pred_bwd` respectively. Make sure to transform the prediction back to the **original** scale. We then use the `accuracy()` function from the `forecast` package to obtain the error metrics.
+
+```{r}
+# prediction of lm0
+pred0 <- exp(predict(lm0, newdata=test_data))-1
+# prediction of full model
+pred_full <- exp(predict(lm_full, newdata=test_data))-1
+# prediction of backward selected model
+pred_bwd <- exp(predict(lm_bwd, newdata=test_data))-1
+
+library(forecast)
+
+# error of lm0
+accuracy(pred0, test_data$sales)
+# error of full model
+accuracy(pred_full, test_data$sales)
+# error of backward selected model
+accuracy(pred_bwd, test_data$sales)
+```
+
+**Exercise 9** Which model should we choose and why? Judging by its performance on the test data, do you think the prediction given by linear regression is reasonably accurate?
+```{r}
+summary(test_data$sales)
+```
+Answer:
+We should choose lm_bwd because it has the smallest MAE. 
+It is good but not the best prediction.
+
+
+### 2.3.1 Visualization of the prediction on test data
+**Exercise 10** To gain more intuition, let's visualize the prediction given by the linear regression `lm_bwd` on the test data and compare it with the actual observations. Specifically, let's visualize the result for the first 60 days in the test data.
+
+```{r}
+# Exercise 10
+sample_time <- 1:60
+plot(test_data$date[sample_time], test_data$sales[sample_time], xlab='', ylab='sales')
+lines(test_data$date[sample_time], test_data$sales[sample_time], xlab='', ylab='sales')
+lines(test_data$date[sample_time], pred_bwd[sample_time], col = "red")
+```
+
+
+## 3. In class exercise (Optional)
+Rerun the above analysis with the original scale `sales`. Name the corresponding `R` objects as `lm_full1` and `lm_bwd1`. What is the test data error for `lm_full1` and `lm_bwd1`? Does log transformation help improve the forecasting accuracy?
+```{r Optional Exercise}
+
+```
+
+
+## 4. Inventory planning with asymmetric revenue and loss (Optional)
+The ultimate goal for demand forecasting is to decide the optimal inventory level that maximizes the **profit**. Following the notation in the lecture notes.
+
+**Exercise 11** Suppose $r=\$10, l=\$1$, what is the optimal inventory level? Answer: `r (10-1)/10` quantile of the future sales.
+
+```{r profit function, eval=F}
+# This is a customized function to evaluate the profit we will receive on the test data
+profit <- function(pred, actual, loss, revenue){
+  profit <- revenue-loss
+  tmp <- sum(profit*pred[pred<actual])+sum((profit*actual-loss*(pred-actual))[actual<=pred])
+  return(tmp)
+}
+```
+
+How do we generate the prediction of 90% quantile of future sales? We use **Prediction interval!** The function `predict()` in `R` can achieve that with the additional argument `interval='prediction'` and `level`. The `level` argument specifies the confidence level of the prediction interval. Note that the prediction interval is two-sided, thus, to obtain the $q$ quantile of the predicted sales, we need to set the `level` argument as `level`=$1-2(1-q)$. In our case, $q=0.9$.
+
+```{r, eval=F}
+pred_interval_level <- 1-2*(1-0.9)
+pred_opt <- exp(predict(lm_bwd, newdata=test_data, interval='prediction', level=pred_interval_level))-1
+head(pred_opt)
+```
+
+Note that the `fit` column in `pred_opt` is the same as `pred_bwd`, which is the predicted mean of future sales given by the linear regression `lm_bwd`. The `upr` column in `pred_opt` gives the predicted 90% quantile of future sales. Let's evaluate the achieved profit and the forecasting error of the predicted mean and predicted 90% quantile of future sales on the test data.
+```{r, eval=F}
+# under stock probability in the test data
+mean(pred_opt[,1]<test_data$sales)
+mean(pred_opt[,3]<test_data$sales)
+
+# Profit achieved in the test data
+print(profit(pred=pred_opt[,1], actual=test_data$sales, loss=1, revenue=10))
+print(profit(pred=pred_opt[,3], actual=test_data$sales, loss=1, revenue=10))
+
+# Forecasting error achieved in the test data
+print(accuracy(pred_opt[,1], test_data$sales))
+print(accuracy(pred_opt[,3], test_data$sales))
+```
+
+**Exercise 12** Which prediction is more accurate? Which prediction is more profitable? Why is that?
+
+We can further visualize the result to intuitively compare the predicted mean and predicted 90% quantile of future sales on the test data.
+```{r, eval=F}
+# Manually configure the C.I.
+sample_time <- 1:60
+plot(test_data$date[sample_time], test_data$sales[sample_time], xlab='', ylab='sales', ylim=c(100,600))
+lines(test_data$date[sample_time], test_data$sales[sample_time])
+lines(test_data$date[sample_time], pred_opt[sample_time,1], col='red')
+lines(test_data$date[sample_time], pred_opt[sample_time,3], col='blue')
+legend('topleft', c('actual','pred_mean','pred_opt'), lty=c(1,1,1), col=c('black','red','blue'), pch=c(1,NA,NA))
+```
+
+

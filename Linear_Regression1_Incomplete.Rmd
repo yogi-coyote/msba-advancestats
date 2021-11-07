@@ -1,0 +1,201 @@
+---
+title: "Linear Regression in R"
+author: "Vijay"
+date: "week 01 session 02"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+In this session, we will practice implementing basic linear regression in `R` w.r.t. model estimation, model evaluation (in-sample) and model deployment.
+
+## 1. Read in data
+Let's read in the data stored in `UsedCar.csv`.
+
+**Exercise 0:** Read in UsedCar.csv and store it in an R object named `total_data`.
+```{r Exercise 0}
+total_data <- read.csv("./UsedCar.csv", header=T, stringsAsFactors=T)
+```
+
+We can explore the data briefly.
+```{r chunk2}
+## We can take a look at the first couple of data entries.
+head(total_data, n=2)
+## str() gives the structure of the data and date type of each column
+str(total_data)
+## How many observations do we have?
+dim(total_data)[1]
+## How many different variables do we have?
+dim(total_data)[2]
+names(total_data)
+## We can use table() to explore the number of levels for each variable
+table(total_data$Fuel_Type)
+```
+
+**Exercise 1:** How many levels are in the variable `Doors`? Should we treat it as a numerical or categorical variable? How many levels are in the predictor `Automatic` and `Metallic`?
+```{r Exercise 1}
+(total_data$Doors)
+```
+
+
+## 2. Visualization
+We can further do some basic visualization to understand the relationship between the dependent variable and predictors.
+```{r chunk3}
+## Scatterplot
+plot(total_data$Mileage, total_data$Price, ylab='Price', xlab='Mileage',
+     main='Price v.s. Mileage')
+## If the x variable is factor, R will generate side-by-side boxplot
+plot(total_data$Fuel_Type, total_data$Price, ylab='Price', xlab='Fuel Type',
+     main='Price v.s. Fuel Type')
+## Histogram of Price
+hist(total_data$Price, main='Histogram of Price', xlab='')
+```
+
+**Exercise 2:** Plot Price v.s. Age (Scatterplot) and Price v.s. Automatic (Boxplot)
+```{r Exercise 2}
+plot(total_data$Doors, total_data$Price)
+boxplot(total_data$Price~total_data$Doors)
+```
+
+The histogram of Price is clearly right-skewed. Let's do a log-transformation of the original scale Price and store it in a new variable `Log_price`. Let's further recheck the histogram.
+```{r chunk4}
+## Log transformation
+total_data$Log_price <- log(total_data$Price+1)
+total_data$Log_price <- log(total_data$Price+1)
+## Histogram of log price
+hist(total_data$Log_price)
+```
+
+
+## 3. Linear Regression 
+### 3.1 Model Estimation
+Let's fit some linear regression models based on the data using the function `lm()`.
+```{r chunk5}
+## The first model only has an intercept term
+lm0 <- lm(Log_price~1, data=total_data)
+## The second model is the full model
+lm_full <- lm(Log_price~Age+
+                Mileage+
+                Fuel_Type+
+                HP+
+                Metallic+
+                Automatic+
+                CC+
+                Doors+
+                Quarterly_Tax+
+                Weight
+              , data=total_data)
+## We can also use the following code for convenience. Make sure there is no additional unused variables provided!!!
+#lm_full <- lm(Log_price~., data=total_data[,-1])
+
+```
+
+
+Use the `summary()` function in `R` to look at more details about the fitted linear regression. `lm_full$coefficients` returns the estimated coefficient $\hat{\beta}=(\hat{\beta}_1,\hat{\beta}_2,\cdots,\hat{\beta}_p).$ `lm_full$fitted.values` returns the fitted dependent variable $\hat{Y}=\hat{\beta}_0+\hat{\beta}_1X_1+\cdots+\hat{\beta}_pX_p$ based on estimated coefficient $\hat{\beta}.$ 
+```{r chunk6}
+## Look at summary of lm_full
+
+## estimated beta
+lm_full$coefficients
+```
+
+**Exercise 3:** Which predictors are statistically significant?
+
+**Exercise 4:** What is the impact of Age to log Price and thus to Price? 
+```{r Exercise 4}
+
+(exp(-1.047950e-02) - 1) * 100
+
+```
+
+### 3.2 Model Evaluation (In-sample Goodness of Fit)
+**Exercise 5:** What is $R^2$ of lm_full? 
+
+Let's now manually calculate the $R^2$ of lm_full using the formula discussed in class and verify that it is the same as the one returned by `summary(lm_full)`.
+```{r chunk7}
+TSS <- sum((total_data$Log_price-mean(total_data$Log_price))^2)
+RSS <- sum((total_data$Log_price-lm_full$fitted.values)^2)
+## Calculate R^2
+1 - RSS/TSS
+RSS
+```
+
+**Exercise 6:** Is there another way to calculate RSS?
+```{r Exercise 6}
+lm_full$residuals
+sum((lm_full$residuals)^2)
+```
+
+Based on the in-sample residuals, we can calculate popular error measures such as MAE, MAPE, RMSE.
+```{r chunk8}
+## residuals
+error <- lm_full$residuals
+MAE <- mean(abs(error))
+MAPE <- mean(abs(error/total_data$Log_price))*100
+print(c(MAE,MAPE))
+```
+
+**Exercise 7:** Calculate RMSE manually.
+```{r Exercise 7}
+##
+
+```
+
+We can also use the package `forecast` to generate MAE, MAPE, RMSE automatically
+```{r chunk9}
+library(forecast)
+## first argument is the prediction, second argument is the actual observation
+accuracy(lm_full$fitted.values, total_data$Log_price)
+```
+
+Note that these values may not be very meaningful as the results on in log-scale. We should instead evaluate MAE, MAPE, RMSE at the the original scale. In other words, let's transform the fitted log Price to Price. How good/accurate is the **in-sample** fit of the linear regression given by lm_full?
+```{r chunk10}
+## How do we transform the log-scale fitted value to the original scale?
+accuracy(exp(lm_full$fitted.values)-1, total_data$Price)
+```
+
+
+### 3.3. Model Deployment
+We can use the `predict()` function in `R` to predict log Price at a given predictor value $X$. The `predict()` function is a generic function for generating predictions from a fitted statistical model. It works with the `lm` object created by the `lm()` function.
+
+Let's read in the new Used Car that we would like to price. 
+```{r chunk11}
+new_cars <- read.csv('./UsedCar_Newdata.csv', header=T, stringsAsFactors=T)
+```
+
+Important! Make sure that the new data `new_cars` contains all the predictors used in the fitted linear regression model `lm_full`. There can be extra variables stored in `new_cars`, `predict()` will simply ignore them. 
+```{r chunk12}
+pred_logPrice <- predict(object=lm_full, newdata=new_cars)
+pred_Price <- exp(pred_logPrice)-1 # transform back to the original scale
+print(pred_Price)
+```
+
+We can also generate prediction intervals for prediction uncertainty quantification at a certain confidence level, say 90%.
+```{r chunk13}
+pred_logPrice_interval <- predict(object=lm_full, newdata=new_cars, interval='prediction', level=0.9)
+## Transform the log-scale prediction back to original scale
+# pred_Price_interval <- 
+# print(pred_Price_interval)
+```
+
+Finally, we can combine the prediction results with the new Used Car and export it out as a csv file for reporting. (This step is optional.)
+```{r chunk14}
+# new_cars <- cbind.data.frame(new_cars, pred_Price_interval)
+# write.csv(file='UsedCar_Newdata_Predicted.csv', x=new_cars, row.names=F)
+```
+
+
+## 4. In-class Exercise (Part of HW1)
+Fit a linear regression model of Log_price w.r.t. two predictors Age and Mileage, name it `lm_short`.
+
+**Q1** What is the $R^2$ of `lm_short`? Is it higher or lower than the $R^2$ of `lm_full`?
+
+**Q2** What is the estimated coefficient of `lm_short` for Age and Mileage? How should we interpret it at the log-scale and the original scale?
+
+**Q3** Predict the new_cars price at the **original scale** based on `lm_short` and further construct a 90% prediction interval.
+
+```{r In-class Exercise}
+# lm_short <- 
+```
+

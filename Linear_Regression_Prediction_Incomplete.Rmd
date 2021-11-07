@@ -1,0 +1,168 @@
+---
+title: "Linear Regression II"
+author: "Vijay Penmetsa"
+date: "week 02 session 01"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+In this lab, we will practice data partition, backward selection, out-of-sample prediction performance evaluation and polynomial regression.
+
+## 1. Data Partition
+Let's read in the data stored in `UsedCar.csv` and log transform the dependent variable Price.
+```{r chunk1}
+total_data <- read.csv("./UsedCar.csv", header=T, stringsAsFactors=T)
+total_data$Log_price <- log(total_data$Price+1)
+```
+
+We would like to partition the total observed data into a training data and a test data. To ensure reproducibility, we use the `set.seed()` function to control the sampling randomness in `R`.
+```{r chunk2, eval=T}
+set.seed(7)
+total_obs <- dim(total_data)[1]
+# Data partition / Sample splitting
+train_data_indices <- sample(1:total_obs, 0.8*total_obs)
+train_data <- total_data[train_data_indices, ]
+test_data <- total_data[-train_data_indices, ]
+
+# Record the size of training data and test data
+train_obs <- dim(train_data)[1]
+test_obs <- dim(test_data)[1]
+train_obs
+test_obs
+
+```
+
+
+## 2. Linear Regression 
+### 2.1 Model Estimation
+Let's first fit the largest and the smallest linear regression models based on the **training** data using the function `lm()` and name the model as `lm_full` and `lm0` respectively.
+```{r chunk3, eval=T}
+## Fit a LM with only intercept beta0
+lm0 <- lm(Log_price~1, data=train_data)
+## Fit a full LM
+lm_full <- lm(Log_price~Age+Mileage+Fuel_Type+HP+Metallic+Automatic+CC+Doors+Quarterly_Tax+Weight, data=train_data)
+summary(lm_full)
+```
+
+### 2.2 Backward Selection via BIC
+For backward selection, we use the function `step()` in `R`. Note that for `step()`, we need to configure the `direction` argument to `backward` and more importantly, we need to configure the `k` argument to `log(train_obs)`, which corresponds to BIC. The default `k` is 2, which corresponds to AIC. Note that in the `step()` function, we need to specify the largest linear regression model we would like to consider, which is `lm_full` we fitted above. By default, `step()` will print out each step of the backward selection. We name the final selected model as `lm_bwd`.
+```{r chunk4}
+## Backward selection
+lm_bkwd <- step(lm_full, direction = "backward", k = log(train_obs))
+```
+
+Let's study the output of the backward selection, which predictors are removed during the process?
+```{r chunk4.1}
+## Look at the result of lm_bwd
+summary(lm_bkwd)
+```
+
+
+### 2.3 Model Deployment and Evaluation (test data)
+Now we have three models in hand, `lm0`, `lm_full` and `lm_bwd`. Let's further directly evaluate their prediction performance on the test data. We use the `predict()` function to generate prediction for the test data based on linear regressions (`lm0`, `lm_full` and `lm_bwd`) estimated on the training data. 
+
+The `predict()` function is a generic function for generating predictions from a fitted statistical model at given predictor values $X$. It works with the `lm` object created by the `lm()` function. Note that the true dependent variable $Y$ on the test data is known. However, this does not matter. The function `predict()` will simply ignore all the extra variables that are not involved as the predictors of the `lm` object. 
+
+```{r chunk5, eval=T}
+# Model deployment (transformed back to the original scale!)
+lm0_pred <- exp(predict(lm0, newdata=test_data))-1
+lm_full_pred <- exp(predict(lm_full, newdata = test_data)) #EXP because it is in LOG form
+lm_bkwd_pred <- exp(predict(lm_bkwd, newdata = test_data))
+
+```
+
+Since the true dependent variable $Y$ on the test data is known, we can further calculate the error measures such as MAE, MAPE, RMSE, for the generated predictions on the **test data**.
+```{r chunk6, eval=T}
+# Test data error
+library(forecast)
+accuracy(lm0_pred, test_data$Price) # simplest model (underfit)
+accuracy(lm_full_pred, test_data$Price)
+accuracy(lm_bkwd_pred, test_data$Price)
+```
+
+**Exercise 1**: Which linear regression model should we choose? (Hint: think about the two criteria of a good statistical model)
+
+
+## 3. Polynomial Regression
+Let's reproduce the polynomial regression examples used in the lecture slide. First, let's read in the data. For convenience, I have manually separated the training and test data into two csv files named `Income_Train.csv` and `Income_Test.csv`, respectively.
+
+```{r chunk7}
+train_data <- read.csv("./Income_Train.csv", header=T, stringsAsFactors=T)
+test_data <- read.csv("./Income_Test.csv", header=T, stringsAsFactors=T)
+total_data <- rbind(train_data, test_data)
+plot(total_data$Education, total_data$Income, xlab='Education (Year)', ylab='Income (1000s)', main='Income v.s. Year')
+```
+
+Let's fit a couple of different polynomial regression in `R` using `lm()`. There are two ways to generate the polynomial terms in `lm()`. One is via the function `I()` and one is via the function `poly()`. We can use `I()` when the polynomial order is not very large and use `poly()` when the polynomial order is large for convenience.
+```{r chunk8}
+# linear regression
+lm1 <- lm(Income ~ Education, data = train_data)
+# quadratic regression
+lm2 <- lm(Income ~ Education + I(Education^2), data = train_data)
+# 10th order polynomial regression
+lm10 <- lm(Income ~ poly(Education, 10), data = train_data)
+```
+
+**Exercise 3.1** Fit a 20th order polynomial regression and name it `lm20`.
+```{r Ex3.1}
+# 20th order polynomial regression of Income v.s. Education
+lm20 <- lm(Income ~ poly(Education, 20), data = train_data)
+```
+
+
+### 3.1 In-sample goodness of fit and BIC
+Let's look at the in-sample $R^2$ and BIC of each model. 
+```{r chunk9}
+# R^2
+c(summary(lm1)$r.sq, summary(lm2)$r.sq, summary(lm10)$r.sq)
+# BIC
+c(BIC(lm1), BIC(lm2), BIC(lm10))
+```
+
+**Exercise 3.2**: Which model has the highest $R^2?$ Which model has the smallest BIC? How about the $R^2$ and BIC of `lm20`?
+
+
+### 3.2 Out-of-sample prediction evaluation on test data
+We use the `predict()` function to generate prediction for the test data based on fitted linear regressions estimated on the training data. Since the true dependent variable $Y$ on the test data is known, we further calculate the error measures for the generated predictions.
+
+```{r chunk10}
+lm1_pred <- predict(lm1, newdata = test_data)
+lm2_pred <- predict(lm2, newdata = test_data)
+lm10_pred <- predict(lm10, newdata = test_data)
+
+accuracy(lm1_pred, test_data$Income)
+accuracy(lm2_pred, test_data$Income)
+accuracy(lm10_pred, test_data$Income)
+```
+
+**Exercise 3.3**: Which model has the smallest out of sample prediction error?
+
+**Exercise 3.4** Calculate the out-of-sample prediction error of `lm20`. Does `lm20` suffer from underfitting or overfitting?
+
+```{r Ex3.4}
+
+```
+
+**Exercise 3.5**: Build a cubic regression based on the training data and report its $R^2$, BIC and out-of-sample prediction performance on the test data.
+```{r Ex3.5}
+
+```
+
+
+### 3.3 Visualization (Optional)
+Let's reproduce some of the plots in the lecture slides.
+```{r chunk11, eval=F}
+min_Education <- min(total_data$Education)
+max_Education <- max(total_data$Education)
+# Create a data.frame that contains the evaluation range of the predictor Education
+eval_range <- data.frame(Education=seq(min_Education, max_Education, 0.01))
+
+plot(train_data$Education, train_data$Income, ylim=c(0,120), xlim=c(min_Education,max_Education),
+     ylab='Income', xlab='Education', main='Quadratic Regression')
+pred2 <- predict(lm2, newdata=eval_range)
+lines(eval_range$Education, pred2, col='blue', lwd=2)
+points(test_data$Education, test_data$Income, pch=17)
+legend('topleft', c('training','test'), pch=c(1,17))
+```
+

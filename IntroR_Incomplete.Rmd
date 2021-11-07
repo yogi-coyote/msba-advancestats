@@ -1,0 +1,204 @@
+---
+title: "R Basics"
+author: "Vijay"
+date: "week 01 session 01"
+output:
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+
+In this session, we will introduce some simple `R` commands which we will use in later data analysis. The best way to learn a new language is to try out the commands. In this class, we will run `R` within an integrated development environment (IDE) `RStudio` and heavily use `R Markdown`.
+
+## 1. Basic R Commands
+`R` uses **functions** to perform operations. To run a function called `funcname`, we type `funcname(input1, input2)`, where the inputs (or *arguments*) `input1` and `input2` tell `R` how to run the function. A function can have any number of inputs. For example, to create a vector of numbers, we use the function `c()` (for *concatenate*). Any numbers inside the parentheses are joined together. The following command instructs `R` to join together the numbers 1, 3, 2, 5 and 4, and to save them as a vector named `x`. When we type `x`, it gives us back the vector.
+
+```{r chunk1}
+##
+x <- c(1,3,5,7,9)
+y <- c(126,420,9)
+```
+
+We can perform arithmetic operations on the vector `x`, such as square root, log, polynomial power etc. For example, the `sqrt()` function returns the square root of each element of a vector. The command `x^2` raises each element of `x` to the power `2`.
+```{r chunk2}
+##
+sum(x)
+sum(sqrt(x))
+mean(x)
+sum(x)/length(x)
+```
+
+Similarly, we can add, subtract, multiply and divide each element of `x` by a common number. For example, we can do
+```{r chunk2.1}
+##
+x + y
+x * 10
+```
+
+We can also calculate the sum, mean, sample variance and standard deviation of a vector `x` easily in R using functions `sum()`,`mean()`,`var()` and `sd()`.
+```{r chunk2.2}
+##
+
+```
+
+We can tell `R` to add two sets of numbers together. It will then add the first number from `x` to the first number from `y`, and so on. However, `x` and `y` should be the same length. We can check their length using the `length()` function.
+
+```{r chunk3}
+##
+
+```
+
+Hitting the *up* arrow multiple times will display the previous commands, which can then be edited. This is useful since one often wishes to repeat a similar command. In addition, typing `?funcname` will always cause `R` to open a new help file window with additional information about the function `funcname()`. For example we can try `?read.csv`, which gives additional information for the function `read.csv()`.
+
+The `ls()` function allows us to look at a list of all of the objects, such as data and functions, that we have created so far. The `rm()` function can be used to delete any that we don't want.
+
+```{r chunk4}
+##
+ls()
+rm(x)
+```
+
+It's also possible to remove all objects at once:
+
+```{r chunk5}
+##
+rm()
+```
+
+
+## 2. Sequence and Random Sampling
+The function `seq()` can be used to create a sequence of numbers. For instance, `seq(a, b, by=1)` makes a vector of integers between `a` and `b` with distance `1` between consecutive numbers. Typing `3:11` is a shorthand for `seq(3, 11, by=1)` for integer arguments.
+
+```{r chunk6}
+##
+seq(1, 10, by = 1)
+seq(1, 20, by = 3)
+```
+
+The function `sample()` can be used to create random sampling of a given sequence. For instance, `sample(x, size=2, replace=F)` samples 2 elements from the vector `x` without replacement. The `size` argument controls the number of elements we would like to sample.
+```{r chunk7}
+##
+x <- 1:37
+sample(x,size = 1, replace = FALSE)
+set.seed(1)
+sample(x,size = 1, replace = FALSE)
+set.seed(1)
+sample(x,size = 1, replace = FALSE)
+```
+
+Importantly, note that when we compare the two `y`s from the same R command, they are different! The reason is that we are doing random sampling and every time the outcome is random. To ensure the reproducibility of the random sampling, we need to control the randomness using the function `set.seed()`. The `set.seed()` function takes an (arbitrary) integer argument. We use `set.seed()` throughout the course whenever we perform calculations involving random quantities. In general this should allow us to get the same results across different computers.
+
+```{r chunk8}
+##
+
+
+```
+
+
+## 3. Read in Data
+For most analyses in our course, the first step involves importing a data set stored in a `csv` file into `R`. The `read.csv()` function is one of the primary ways to do this. The help file `?read.csv` contains details about how to use this function.
+
+Before attempting to load a data set, we must make sure that `R` knows to search for the data in the proper directory. For example, on a Windows system one could select the directory using the `Change dir ...` option under the `File` menu. However, the details of how to do this depend on the operating system (e.g. Windows, Mac, Unix) that is being used, and so we do not give further details here. We can use the function `getwd()` to return the current working directory of `R`.
+
+We begin by loading in the `UsedCar` data set, which will be used extensively for linear regression analysis. The following command will load the `UsedCar.csv` file into `R` and store it as an object called `total_data`.  Once the data has been loaded, the `View()` function can be used to view it in a spreadsheet-like window. The `head()` function can also be used to view the first few rows of the data.
+ 
+Using the option `header=T` (or `header=TRUE`) in the `read.csv()` function tells `R` that the first line of the file contains the variable names. The `stringsAsFactors=T` argument tells `R` that any variable containing character strings should be interpreted as a categorical variable, and that each distinct character string represents a distinct level for that categorical variable.
+
+```{r chunk9}
+##
+total_data <- read.csv('./UsedCar.csv', 
+                       header = TRUE, 
+                       stringsAsFactors = TRUE)
+
+```
+
+Once the data are loaded correctly, we can use `names()` or `colnames()` to check the variable names. The `dim()` function tells us that the data has $1436$ observations, or rows, and $11$ variables, or columns. 
+
+```{r chunk10}
+##
+str(total_data)
+summary(total_data)
+dim(total_data)
+
+```
+
+The `str()` function displays the internal structure (such as data type) of an `R` object. The `summary()` function produces a more detailed numerical summary of each variable in a particular data set. For categorical variables such as `Fuel_Type`, `R` will list the number of observations that fall in each category.
+
+```{r chunk11}
+##
+
+```
+
+
+## 4. Indexing Data
+We often wish to examine or extract part of a data set stored as a `data.frame` object. We can select a specific column by directly calling its name via `$`.
+```{r chunk12}
+##
+total_data$Price
+head(total_data$Price)
+```
+
+We can also perform more flexible indexing. For example, typing
+```{r chunk13}
+##
+total_data[2,3]
+```
+will select the element corresponding to the second row and the third column. The first number after the open-bracket symbol `[` always refers to the row, and the second number always refers to the column. We can also select multiple rows and columns at a time, by providing vectors as the indices.
+
+```{r chunk14}
+##
+head(total_data[ ,c(1,3)])
+total_data[c(1,3), ]
+```
+
+The last two examples include either no index for the columns or no index for the rows. These indicate that `R` should include all columns or all rows, respectively.
+```{r chunk15}
+##
+
+```
+
+The use of a negative sign `-` in the index tells `R` to keep all rows or columns except those indicated in the index.
+```{r chunk16}
+##
+head(total_data[,-2], 2)
+```
+
+
+## 5. Graphics and Visualization
+The `plot()` function is the primary way to plot data in `R`. For instance, `plot(x, y)` produces a scatter plot of the numbers in `x` versus the numbers in `y`. There are many additional options that can be passed in to the `plot()` function. For example,
+passing in the argument `xlab` will result in a label on the $x$-axis. To find out more information about the `plot()` function,
+type `?plot`.
+
+We can use the `plot()` function to produce *scatterplot* of the numerical variables. 
+
+```{r chunk17}
+##
+
+```
+
+If the variable plotted on the $x$-axis is categorical, then *boxplot* will automatically be produced by the `plot()` function.
+
+```{r chunk18}
+##
+
+```
+
+The `Doors` variable is stored as a numeric vector, so `R` has treated it as numerical. However, since there are only a small number of possible values for `Doors`, one may prefer to make a *boxplot* instead of a *scatterplot*. We can use the function `boxplot()` for that purpose.
+
+```{r chunk19}
+##
+
+```
+
+The `hist()` function can be used to plot a histogram.
+
+```{r chunk20}
+##
+
+```
+
+
+## Exiting R
+Once we have finished using `R`, we type `q()` in order to shut it down, or quit. When exiting `R`, we have the option to save the current so that all objects (such as data sets) that we have created in this `R` session will be available next time. Before exiting `R`, we may want to save a record of all of the commands that we typed in the most recent session; this can be accomplished using the `savehistory()` function. Next time we enter `R`, we can load that history using the `loadhistory()` function, if we wish. 
+
