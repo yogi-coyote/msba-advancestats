@@ -1,0 +1,182 @@
+---
+title: "GAM and NN in R"
+author: "Zifeng Zhao"
+date: "week 03 session 01"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+In this lab, we will practice implementing Polynomial regression, Generalized Additive Model (GAM) and Neural Network (NN) in `R`. 
+```{r}
+install.packages("gam", "neuralnet")
+install.packages("neuralnet")
+library(gam)
+library(neuralnet)
+```
+
+### 1.1 Data Preparation
+Let's read in the data stored in `UsedCar.csv` and log transform the dependent variable Price to correct the right-skewness. Let's further do a 80%-20% training-test split from the very beginning. We use the `set.seed()` function in `R` to control the randomness of the training-test split.
+
+```{r chunk1}
+rm(list=ls())
+set.seed(7)
+total_data <- read.csv("./UsedCar.csv", header=T, stringsAsFactors=T)
+total_obs <- dim(total_data)[1]
+total_data$Log_price <- log(total_data$Price+1)
+## Data Partition: Training v.s. Test split
+train_data_indices <- sample(1:total_obs, 0.8*total_obs)
+train_data <- total_data[train_data_indices,]
+test_data <- total_data[-train_data_indices,]
+```
+
+
+### 1.2 Polynomial Regression
+We first build a linear regression model for the dependent variable `Log_price` with predictors `Age + Mileage + Fuel_Type + HP + Weight` and name it `lm1`. Based on previous data visualization, we further build a polynomial regression that involves second order polynomial terms for predictors `Age`, `Mileage` and `Weight`, and we store the model in `lm1_poly`.
+
+```{r chunk2}
+lm1 <- lm(Log_price~Age+Mileage+Fuel_Type+HP+Weight, data=train_data)
+lm1_poly <- lm(Log_price~Age+I(Age^2)+Mileage+I(Mileage^2)+Fuel_Type+HP+Weight+I(Weight^2), data=train_data)
+```
+
+Let's evaluate the prediction performance of `lm1` and `lm1_poly` on the test data and see if the additional polynomial terms help improve the prediction accuracy.
+```{r chunk3}
+library(forecast)
+# Model deployment
+lm1_pred <- exp(predict(lm1, newdata=test_data))-1
+lm1_poly_pred <- exp(predict(lm1_poly, newdata=test_data)) - 1
+
+# Test data error
+accuracy(lm1_pred, test_data$Price) 
+accuracy(lm1_poly_pred, test_data$Price)
+```
+
+
+### 1.3 Generalized Additive Model
+Note that the additional polynomial terms do help improve the prediction accuracy to some degree. We now build a GAM with predictors `Age + Mileage + Fuel_Type + HP + Weight`. We specify splines with degree-of-freedom=4 for predictors `Age`, `Mileage` and `Weight`, and we store the model in `gam1`. We can use `plot()` function to visualize the estimated coefficients and splines for each predictor. Note that we can still interpret the estimated model `gam1` due to the additivity of GAM.
+
+```{r chunk4}
+library(gam)
+## Fit a GAM
+gam1 <- gam(Log_price ~ 
+              s(Age, df = 4)
+            +s(Mileage, df = 4)
+            +Fuel_Type
+            +HP
+            +s(Weight, df = 4), 
+            data = train_data)
+plot(gam1, col='blue') # rugplot=T gives the incidents along the x-axis, but uses jittering for tiebreaker
+# print(gam1$coefficients)
+print(summary(gam1))
+```
+
+Let's evaluate the out-of-sample prediction performance of `gam1`. Note that GAM indeed further improves the prediction accuracy.
+```{r chunk5}
+## Model evaluation on Test data
+gam1_pred <- exp(predict(gam1, newdata = test_data)) - 1
+accuracy(gam1_pred, test_data$Price)
+```
+
+
+### 1.4 Neural Networks
+We now build an NN with predictors `Age + Mileage + Fuel_Type + HP + Weight`, which allows both non-linearity and interaction among predictors. Note that the implementation of NN in R is **complicated** and significantly different from linear regression and GAM. It requires more manual configuration.
+
+First of all, NN requires reformatted training data and test data. We first need to reformat the training data and construct a data frame with categorical predictors being represented as dummy variables and store it in `x_train_nn`. We then standardize all predictors $X$ in the data frame `x_train_nn` and combine the data frame with the dependent variable. 
+```{r chunk6}
+library(neuralnet)
+# generate a data frame with categorical predictors being represented as dummy variables
+x_train_nn <- model.matrix(~Age+Mileage+Fuel_Type+HP+Weight, data=train_data)[,-1] #-1 will remove intercept
+head(x_train_nn)
+# standardization
+x_mean <- apply(x_train_nn, 2, "mean")
+x_mean
+x_sd <- apply(x_train_nn, 2, "sd")
+x_train_nn <- scale(x_train_nn, center=x_mean, scale=x_sd)
+
+# combine with dependent variable Log_price
+x_train_nn <- cbind.data.frame(train_data$Log_price, x_train_nn)
+colnames(x_train_nn)[1] <- 'Log_price'
+```
+
+Second, we also need to reformat the test data. Note that when standardizing the test data, we use the minimum and maximum value retrieved from the **training data**. The reason is that the NN model will be estimated based on the training data that are standardized using the minimum and maximum value retrieved from the **training data**.
+```{r chunk7}
+# generate and standardize the data frame for the test data as well
+x_test_nn <- model.matrix(~Age+Mileage+Fuel_Type+HP+Weight, data=test_data)
+# standardization
+x_test_nn <- scale(x_test_nn, center = x_mean, scale = x_sd)
+```
+
+We now build an NN with all predictors available and store it in `nn1`. For the architecture of `nn1`, let's have two hidden layers with 6 hidden units in the first layer and 4 hidden units in the second layer and keep the activation function as sigmoid. Note that there is randomness in the training of NN due to the random initialization of the optimization. Thus we use `set.seed()` to control the randomness and ensure reproducibility. We can use `plot()` function to visualize the estimated NN, however, it is difficult to interpret the estimated model.
+```{r chunk8}
+set.seed(7)
+nn1 <- neuralnet(Log_price~Age+Mileage+Fuel_TypeDiesel+Fuel_TypePetrol+HP+Weight, data=x_train_nn, hidden=c(6,4)) # 2 hidden layers - first has 6 and second has 4
+plot(nn1)
+# nn1$act.fct # sigmoid function
+```
+
+Let's evaluate the out-of-sample prediction performance of `nn1`. Note that NN further improves the prediction accuracy.
+```{r chunk9}
+nn_pred <- exp(predict(nn1, newdata = x_test_nn)[,-1]) - 1
+accuracy(nn_pred, test_data$Price)
+```
+
+
+## 2. In-class Exercise: Analysis based on original-scale Price
+Let's practice building, linear regression, polynomial regression, GAM and NN for predicting the original-scale Price with predictors `Age + Mileage + Fuel_Type + HP + Weight`. We store the estimated models in `R` object `lm2`, `lm2_poly`, `gam2` and `nn2` respectively.
+
+* lm2: `Price~Age+Mileage+Fuel_Type+HP+Weight`
+* lm2_poly: `Price~Age+I(Age^2)+Mileage+I(Mileage^2)+Fuel_Type+HP+Weight+I(Weight^2)`
+* gam2: `Price~s(Age,df=4)+s(Mileage,df=4)+Fuel_Type+HP+s(Weight,df=4)`
+* nn2: `St_Price~Age+Mileage+Fuel_TypeDiesel+Fuel_TypePetrol+HP+Weight`
+
+```{r lm2, lm2_poly, gam2}
+# lm2 <- 
+# lm2_poly <- 
+# gam2 <- 
+```
+
+Note that besides the predictors $X$, we need to further standardize the original-scale dependent variable $Y$ by its maximum value in the training data.
+```{r NN standardization}
+# Standardize the predictors (training data)
+x_train_nn <- model.matrix(~Age+Mileage+Fuel_Type+HP+Weight, data=train_data)[,-1]
+x_mean <- apply(x_train_nn, 2, mean)
+x_sd <- apply(x_train_nn, 2, sd)
+x_train_nn <- scale(x_train_nn, center=x_mean, scale=x_sd)
+
+# Standardize the original scale dependent variable (training data)
+
+
+# Standardize the predictors (test data)
+x_test_nn <- model.matrix(~Age+Mileage+Fuel_Type+HP+Weight, data=test_data)[,-1]
+x_test_nn <- scale(x_test_nn, center=x_mean, scale=x_sd)
+
+set.seed(7)
+# nn2 <- 
+```
+
+We evaluate the prediction performance and see if the conclusion is the same as the one for log-scale prediction, where NN is more accurate than GAM and linear regression.
+```{r Out-of-sample prediction}
+# Model deployment
+
+# Test data error
+
+```
+
+
+## 3. Backward selection for GAM (Optional)
+GAM also supports variable selection via BIC, however, its implementation is more complicated. As explained in class, the reason is that during the backward selection, we need to decide 1. whether to keep a predictor $X_i$ in the model at all 2. If we keep $X_i$, what should be the degree-of-freedom of $f_i$.
+
+```{r gam_bwd, eval=F}
+gam_full <- gam(Log_price~s(Age,df=4)+s(Mileage,df=4)+Fuel_Type+HP+Metallic+Automatic+CC+Doors+Quarterly_Tax+s(Weight,df=4),
+                data=train_data)
+scope_list <- list('Age'=~1+Age+s(Age,df=2)+s(Age,df=4), 'Mileage'=~1+Mileage+s(Mileage,df=2)+s(Mileage,df=4),
+                   'Fuel_Type'=~1+Fuel_Type, 'HP'=~1+HP,
+                   'Metallic'=~1+Metallic, 'Automatic'=~1+Automatic,
+                   'CC'=~1+CC, 'Doors'=~1+Doors,
+                   'Quarterly_Tax'=~1+Quarterly_Tax,
+                   'Weight'=~1+Weight+s(Weight,df=2)+s(Weight,df=4))
+gam_bwd <- step.Gam(gam_full, direction='backward', scope=scope_list, trace=T)
+gam_bwd_pred <- exp(predict(gam_bwd, newdata=test_data))-1
+accuracy(gam_bwd_pred, test_data$Price)
+```

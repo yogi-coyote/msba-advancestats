@@ -1,0 +1,211 @@
+---
+title: "Final Exam"
+author: ""
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+There are five questions (58 total points). Please type in your answers directly in the R Markdown file. After completion, **successfully** knitr it as an html file. Submit <span style="color:red">**both**</span> the html file and the R Markdown file via Canvas. Please name the R Markdown file in the following format: LastName_FirstName_Final.Rmd, e.g. Zhao_Zifeng_Final.Rmd.
+
+
+## NYZ Times Dataset (58 points)
+NYZ Times is a newspaper publishing company. The company maintains a dataset on their last marketing campaigns for promoting online subscription. For each individual customer, the dataset contains the campaign result (Subscriber = Yes/No) and the corresponding customer characteristics. There are 5,000 individual records in the dataset. It contains 7 variables `Age`, `Experience`, `Income`, `Family`, `AvgAmt`, `Education` and `Subscriber`. The data description is as follows.
+
++ `Age`: Age of the customer (in years)
++ `Experience`: Working experience of the customer (in years)
++ `Income`: Annual income of the customer ($000)
++ `Family`: Family size of the customer
++ `AvgAmt`: Average amount of online spending per month by the customer ($00)
++ `Education`: Education level of the customer (Bachelor / Master / PhD)
++ `Subscriber`: Did the marketing campaign convert the customer into a subscriber? (Yes / No)
+
+To promote online subscription more efficiently and effectively, NYZ Times decides to build several statistical models that can predict the conversion probability of each customer, and thus selectively send advertisement to potential customers that have higher conversion probability.
+
+```{r}
+rm(list=ls())
+```
+
+
+
+###  **Q1 [6 points]** Read in Data and Data Partition
+**Q1(a) [2 points]**
+Let's correctly read in the data in `NYZ_Times.csv` and name it as `total_data`. 
+```{r Q1(a)}
+## Write code solution to Q1(a) here
+
+```
+
+
+**Q1(b) [2 points]** What is the conversion rate in the current dataset stored in `total_data`?
+```{r Q1(b)}
+## Write code solution to Q1(b) here
+
+```
+
+Answer:
+
+
+**Q1(c) [2 points]**
+Let's partition the data in `total_data` into training **(60%)** and test data **(40%)** and store them as `R` objects `train_data` and `test_data` respectively. Use random seed **`set.seed(7)`**!
+```{r Q1(c)}
+## Write code solution to Q1(c) here
+set.seed(7)
+
+```
+
+
+
+### **Q2 [12 points]** Logistic Regression
+**Q2(a) [4 points]**
+Fit a logistic regression model of the dependent variable `Subscriber` w.r.t. all 6 predictors `Age`, `Experience`, `Income`, `Family`, `AvgAmt`, `Education` using the training data, name it `lm_full`.
+```{r Q2(a)}
+## Write code solution to Q2(a) here
+
+```
+
+
+**Q2(b) [2 points]**
+Examine the estimation result of `lm_full`. Are customers with higher Income more likely to be Subscribers?
+```{r Q2(b)}
+## Write code solution to Q2(b) here
+
+```
+
+Answer:
+
+
+**Q2(c) [4 points]**
+Let's further conduct a backward selection for `lm_full` via BIC using the `step()` function and store the final selected model as `lm_bwd`. Make sure you use the **correct** number for the argument `k` in the `step()` function.
+```{r Q2(c)}
+## Write code solution to Q2(c) here
+
+```
+
+
+**Q2(d) [2 points]** Which variables are removed during the backward selection?
+
+Answer:
+
+
+
+## **Q3 [8 points]** Generalized Additive Model
+**Q3(a) [4 points]**
+To capture potential nonlinear relationship, we fit a GAM model of the dependent variable `Subscriber` w.r.t. all 6 predictors `Age`, `Experience`, `Income`, `Family`, `AvgAmt`, `Education` using the training data, name it `gam1`. Let's use splines with **df=4** for all **5** numerical predictors, which include `Age`, `Experience`, `Income`, `Family` and `AvgAmt`.
+```{r Q3(a)}
+## Write code solution to Q3(a) here
+
+```
+
+
+**Q3(b) [2 points]**
+Plot the estimated splines by `gam1`. For the predictor `Income`, is the relationship monotonic?
+```{r Q3(b)}
+## Write code solution to Q3(b) here
+
+```
+
+Answer:
+
+
+**Q3(c) [2 points]**
+Keeping everything else the same, further fit a GAM mobdel but using splines with **df=2** for `Income`, name it `gam2`. Do we have a monotonic relationship for predictor `Income` now?
+```{r Q3(c)}
+## Write code solution to Q3(c) here
+
+```
+
+Answer:
+
+
+
+### **Q4 [14 points]** Neural Networks
+Fit an NN model of the dependent variable `Subscriber` w.r.t. all 6 predictors `Age`, `Experience`, `Income`, `Family`, `AvgAmt`, `Education` using the training data, name it `nn1`. For the architecture of NN, let's use one hidden layer with **6** hidden units.
+
+**Q4(a) [4 points]**
+Generate the training dataset that are needed for the estimation of NN using the function `model.matrix()` and store it in `x_train_nn`. In addition, use the `scale()` function to standardize the predictors by centering with mean and scaling with sd.
+```{r Q4(a)}
+## Write code solution to Q4(a) here
+
+```
+
+
+**Q4(b) [2 points]**
+Further combine the dependent variable `Subscriber` with the standardized predictors `x_train_nn` generated in Q4(a). Don't forget to rename the first column of the data frame as `Subscriber`.
+```{r Q4(b)}
+## Write code solution to Q4(b) here
+
+```
+
+
+**Q4(c) [2 points]**
+Generate the test dataset that are needed for the out-of-sample prediction evaluation of NN using the function `model.matrix` and store it in `x_test_nn`. Use the `scale()` function to standardize the predictors by centering with mean and scaling with sd as in Q4(a).
+```{r Q4(c)}
+## Write code solution to Q4(c) here
+
+```
+
+
+**Q4(d) [6 points]**
+Fit an NN that has one hidden layers with **6** hidden units and name it `nn1`. Make sure to use random seed **`set.seed(7)`**!
+```{r Q4(d)}
+## Write code solution to Q4(d) here
+
+```
+
+
+
+### **Q5 [18 points]** Model Evaluation (Prediction)
+**Q5(a) [4 points]**
+Use `lm_full`, `gam1` and `nn1` to generate probability predictions on the test data and store the prediction in `lm_full_pred`, `gam1_pred` and `nn1_pred` respectively.
+```{r Q5(a)}
+## Write code solution to Q5(a) here
+
+```
+
+
+**Q5(b) [2 points]**
+What are the predicted conversion probability of the **fifth** customer in the test data by `lm_full`, `gam1` and `nn1`, respectively?
+```{r Q5(b)}
+## Write code solution to Q5(b) here
+
+```
+
+Answer:
+
+
+**Q5(c) [2 points]**
+Use the `R` package `caret` to evaluate the prediction performance of `lm_full`, `gam1` and `nn1` on the test data. What are the sensitivity of `lm_full`, `gam1` and `nn1`?
+```{r Q5(c)}
+## Write code solution to Q5(c) here
+
+```
+
+Answer:
+
+
+**Q5(d) [4 points]**
+Based on the result in Q5(c), fill out the confusion matrix for `gam` and `nn1` on the written exam.
+
+
+**Q5(e) [2 points]** Further generate a lift chart to compare the prediction performance of `lm_full`, `gam1` and `nn1`. To make the lift chart look nice, do **NOT** use the `cuts` argument.
+
+```{r Q5(e)}
+## Write code solution to Q5(e) here
+
+```
+
+
+**Q5(f) [2 points]**
+Which model should we prefer if we only has the marketing budget to reach out to 20% of the customers? 
+
+Answer:
+
+
+**Q5(g) [2 points]** 
+Take `lm_full` for example. If we want to capture more than 80% of all potential customers (i.e. customers who will become subscriber), what should be our minimum marketing budget? In other words, what is the percentage of customers we should reach out to? (The answer does not need to be exact, it only needs to be approximately correct.)
+
+Answer:
+
+

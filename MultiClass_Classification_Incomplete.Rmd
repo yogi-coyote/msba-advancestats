@@ -1,0 +1,238 @@
+---
+title: "Multiclass Classification"
+author: "Zifeng Zhao"
+date: "week 06 session 02"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+In this lab, we will practice implementing multinomial logistic regression and multiclass neural networks in `R`. 
+
+## 1. Car Selection Dataset
+### 1.1 Data Partition
+Let's read in the data stored in `Car_Selection.csv` and check the distribution of the three classes in the dependent variable `Car`.
+```{r chunk1}
+rm(list=ls())
+library(caret)
+total_data <- read.csv('./Car_Selection.csv', stringsAsFactors=T)
+table(total_data$Car)/dim(total_data)[1] #
+```
+
+We further do a 60%-40% training-test split. To perform a stratified sampling, we use the `createDataPartition()` function in the `R` package `caret`. We use the `set.seed()` function in `R` to control the randomness of the training-test split. Let's recheck the distribution of the three classes in the dependent variable `Car` in the `train_data` and `test_data`.
+```{r chunk2}
+set.seed(7)
+total_obs <- dim(total_data)[1]
+train_index <- createDataPartition(y=total_data$Car, p=0.6,
+                                   list = FALSE)
+train_data <- total_data[train_index,]
+test_data <- total_data[-train_index,]
+
+#table(train_data$Car)/dim(train_data)[1]
+```
+
+### 1.2 Multinomial logistic regression
+We build a multinomial logistic regression model for the dependent variable `Car` with all predictors `College+Household+Commute+Income` based on the **training** data using the function `multinom()` in the `R` package `nnet` and name it `lm1`.
+```{r chunk3}
+library(nnet)
+lm1 <- multinom(Car~College+Household+Commute+Income,
+                data = train_data)
+```
+
+```{r}
+summary(lm1)
+```
+
+
+### 1.3 Model evaluation
+Let's evaluate the prediction performance of `lm1` on the test data. We use the `confusionMatrix()` function in the `R` package `caret` to automatically generate the error metrics such as accuracy, sensitivity and specificity.
+```{r chunk4}
+class_labels <- levels(total_data$Car)
+lm1_pred <- predict(lm1, newdata = test_data, type = 'probs')
+
+lm1_pred_class <- factor(class_labels[apply(lm1_pred, 1, which.max)])
+```
+
+```{r}
+lm1_acc <- confusionMatrix(lm1_pred_class, reference = test_data$Car)
+lm1_acc
+```
+
+
+
+## 2. MNIST Digit Dataset
+### 2.1 Data Partition and Visualization
+Let's read in the data stored in `MNIST_Digit.csv` and perform some data visualization.
+```{r chunk5}
+rm(list=ls())
+total_data0 <- read.csv("./MNIST_Digit.csv", header=F)
+colnames(total_data0) <- c('digit', paste0('v',1:784))
+
+par(mfrow=c(10,10))
+plot_margin <- 0.1
+par(mar=c(plot_margin, plot_margin, plot_margin, plot_margin), xaxt='n', yaxt='n')
+for(digit_index in 0:9){
+  tmp_data <- total_data0[total_data0$digit==digit_index,]
+  for(sample_index in 1:10){
+    tmp_image <- as.numeric(tmp_data[sample_index,])
+    image(matrix(tmp_image[-1], nrow=28, byrow=F)[,28:1], col=gray((0:255)/255))
+  }
+}
+```
+
+To ease computational burden, let's focus on the classification of digit 1,2,3. In other words, we perform a three-class classification. Let's also check the distribution of the three classes (1,2,3) in the dependent variable `digit`.
+```{r chunk6}
+total_data <- total_data0[total_data0$digit%in%c(1,2,3),]
+total_data$digit <- factor(total_data$digit)
+dim(total_data)
+table(total_data$digit)/dim(total_data)[1]
+```
+
+We further do a 50%-50% training-test split from the very beginning. To perform a stratified sampling, we use the `createDataPartition()` function in the `R` package `caret`. We use the `set.seed()` function in `R` to control the randomness of the training-test split. Let's recheck the distribution of the three classes in the dependent variable `digit` in the `train_data` and `test_data`.
+```{r chunk7}
+set.seed(7)
+
+train_index <- createDataPartition(y = total_data$digit, p = 0.5,
+                                  list = FALSE)
+train_data <- total_data[train_index,]
+test_data <- total_data[-train_index,]
+```
+
+
+### 2.2 Multinomial logistic regression
+We build a multinomial logistic regression model for the dependent variable `digit` with all 784 pixel predictors based on the **training** data using the function `multinom()` in the `R` package `nnet` and name it `lm1`. We set the argument `MaxNWts=10000` in the `multinom()` function to make sure the model can be implemented.
+```{r chunk8}
+library(nnet)
+lm1 <- multinom(digit~., data = train_data, MaxNWts = 10000) #MaxNWts = Max weight
+```
+
+### 2.3 Multiclass neural networks
+We further build a neural networks for the dependent variable `digit` with all 784 pixel predictors based on the **training** data. We first need to reformat the training data and store it in `x_train_nn`. We then standardize all predictors $X$ in the data frame `x_train_nn` by dividing with the maximum value possible (255) and combine the data frame with the dependent variable. We do the same thing to obtain the reformatted test data `x_test_nn`.
+
+```{r chunk9}
+library(neuralnet)
+x_train_nn <- model.matrix(digit~., data=train_data)[,-1]
+x_train_nn <- x_train_nn/255
+
+x_train_nn <- cbind.data.frame(train_data$digit, x_train_nn)
+colnames(x_train_nn)[1] <- 'digit'
+
+x_test_nn <- model.matrix(digit~., data=test_data)[,-1]
+x_test_nn <- x_test_nn/255
+
+```
+
+
+We now build an NN with all predictors available and store it in `nn1`. For the architecture of `nn1`, let's have one hidden layer with 4 hidden units and keep the activation function as sigmoid. Note that there is randomness in the training of NN due to the random initialization of the optimization. Thus we use `set.seed()` to control the randomness and ensure reproducibility. We can use `plot()` function to visualize the estimated NN, however, it is difficult to interpret the estimated model.
+```{r chunk10}
+library(neuralnet)
+set.seed(7)
+nn1 <- neuralnet(digit~., data=x_train_nn, linear.output=F, hidden=4)
+# plot(nn1)
+```
+
+
+### 2.4 Model evaluation
+Let's evaluate the prediction performance of `lm1` and `nn1` on the test data. We use the `confusionMatrix()` function in the `R` package `caret` to automatically generate the error metrics such as accuracy, sensitivity and specificity.
+```{r chunk11}
+class_labels <- levels(train_data$digit)
+
+ # lm1
+lm1_pred <- predict(lm1, newdata=test_data, type='probs')
+lm1_pred_class <- factor(class_labels[apply(lm1_pred, 1, which.max)])
+lm1_acc <- confusionMatrix(lm1_pred_class, reference=test_data$digit)
+lm1_acc
+
+# nn1
+nn1_pred <- predict(nn1, newdata=x_test_nn, type='response')
+nn1_pred_class <- factor(class_labels[apply(nn1_pred, 1, which.max)])
+nn1_acc <- confusionMatrix(nn1_pred_class, reference=test_data$digit)
+nn1_acc
+```
+
+Let's visually inspect which image is wrongly classified by neural networks.
+```{r chunk12, eval=F}
+err_index <- which(nn1_pred_class!=test_data$digit)
+tmp_image <- as.numeric(test_data[46,])
+image(matrix(tmp_image[-1], nrow=28, byrow=F)[,28:1], col=gray((0:255)/255))
+nn1_pred_class[46]
+test_data$digit[46]
+```
+
+
+## 3. In-class Exercise: MNIST Fashion Dataset
+### 3.1 Data Partition and Visualization
+Let's read in the data stored in `MNIST_Fashion.csv` and perform some data visualization.
+```{r chunk13}
+rm(list=ls())
+total_data0 <- read.csv("./MNIST_Fashion.csv", header=F)
+colnames(total_data0) <- c('type', paste0('v',1:784))
+
+par(mfrow=c(10,10))
+plot_margin <- 0.1
+par(mar=c(plot_margin, plot_margin, plot_margin, plot_margin), xaxt='n', yaxt='n')
+for(type_index in 0:9){
+  tmp_data <- total_data0[total_data0$type==type_index,]
+  for(sample_index in 1:10){
+    tmp_image <- as.numeric(tmp_data[sample_index,])
+    image(matrix(tmp_image[-1], nrow=28, byrow=F)[,28:1], col=gray((0:255)/255))
+  }
+}
+```
+
+To ease computational burden, let's focus on the classification of type 0,1,2. In other words, we perform a three-class classification. Let's also check the distribution of the three classes (0,1,2) in the dependent variable `type`.
+```{r chunk14}
+total_data <- total_data0[total_data0$type%in%c(0,1,2),]
+total_data$type <- factor(total_data$type)
+dim(total_data)
+table(total_data$type)/dim(total_data)[1]
+```
+
+We further do a **25%-75%** training-test split from the very beginning. To perform a stratified sampling, we use the `createDataPartition()` function in the `R` package `caret`. We use the `set.seed()` function in `R` to control the randomness of the training-test split. Let's recheck the distribution of the three classes in the dependent variable `type` in the `train_data` and `test_data`.
+```{r chunk15}
+set.seed(7)
+
+```
+
+
+### 3.2 Multinomial logistic regression
+We build a multinomial logistic regression model for the dependent variable `type` with all 784 pixel predictors based on the **training** data using the function `multinom()` in the `R` package `nnet` and name it `lm1`. We set the argument `MaxNWts=10000` in the `multinom()` function to make sure the model can be implemented.
+```{r chunk16}
+library(nnet)
+
+```
+
+### 3.3 Multiclass neural networks
+We further build a neural networks for the dependent variable `digit` with all 784 pixel predictors based on the **training** data. We first need to reformat the training data and store it in `x_train_nn`. We then standardize all predictors $X$ in the data frame `x_train_nn` by dividing with the maximum value possible (255) and combine the data frame with the dependent variable. We do the same thing to obtain the reformatted test data `x_test_nn`.
+
+```{r chunk17}
+
+```
+
+
+We now build an NN with all predictors available and store it in `nn1`. For the architecture of `nn1`, let's have one hidden layer with 4 hidden units and keep the activation function as sigmoid. Note that there is randomness in the training of NN due to the random initialization of the optimization. Thus we use `set.seed()` to control the randomness and ensure reproducibility. We can use `plot()` function to visualize the estimated NN, however, it is difficult to interpret the estimated model.
+```{r chunk18}
+library(neuralnet)
+set.seed(7)
+
+```
+
+
+### 3.4 Model evaluation
+Let's evaluate the prediction performance of `lm1` and `nn1` on the test data. We use the `confusionMatrix()` function in the `R` package `caret` to automatically generate the error metrics such as accuracy, sensitivity and specificity.
+```{r chunk19}
+# lm1
+
+# nn1
+
+```
+
+Let's visually inspect which image is wrongly classified by neural networks.
+```{r chunk20, eval=F}
+err_index <- which(nn1_pred_class!=test_data$type)
+tmp_image <- as.numeric(test_data[57,])
+image(matrix(tmp_image[-1], nrow=28, byrow=F)[,28:1], col=gray((0:255)/255))
+nn1_pred_class[57]
+test_data$type[57]
+```

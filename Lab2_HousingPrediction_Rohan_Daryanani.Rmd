@@ -1,0 +1,210 @@
+---
+title: "Lab II: Housing Price Prediction"
+author: "Rohan Daryanani"
+date: "week 03 session 02"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+In this lab, we will build linear regression, GAM and neural networks for predicting resale values of a house.
+
+## 1. Data exploration and visualization
+Let's read in the data from `WestRoxbury.csv` and further conduct some data visualization.
+```{r chunk1}
+total_data <- read.csv("./WestRoxbury.csv", header=T, stringsAsFactors=T)
+str(total_data)
+```
+
+**Exercise 1** Create a scatter plot between `total_value` and `rooms`. Note that `rooms` is a numerical predictor but only takes a finite number of values. Thus, let's further make a boxplot between `total_value` and `rooms`, which is more informative.
+```{r Q1}
+## Scatterplot
+plot(x = total_data$rooms, y = total_data$total_value, ylab = 'Total Value', xlab = 'Rooms', main = 'Rooms vs Total Value')
+
+## Boxplot
+plot(x = factor(total_data$rooms), y = total_data$total_value, ylab='Total Value', xlab='Rooms', main='Rooms v.s. Total Value')
+```
+
+**Exercise 2** Create a boxplot between `total_value` and `remodel`. Does remodeling help increase house value?
+```{r Q2}
+plot(x = factor(total_data$remodel), y = total_data$total_value, ylab='Total Value', xlab='Remodel', main='Remodel v.s. Total Value')
+```
+
+Answer: Yes, remodeling the house does increase the value of the house.
+
+**Exercise 3**
+Create a scatter plot between `total_value` and `yr_built`. Is there any non-linear effect? Similarly, create a scatter plot between `total_value` and `living_area` and investigate the relationship.
+```{r Q3}
+# Year Built vs Total Value
+plot(x = total_data$yr_built, y = total_data$total_value, ylab = 'Total Value', xlab = 'Year Built', main = 'Year Built vs Total Value')
+
+# Living Area vs Total Value
+plot(x = total_data$living_area, y = total_data$total_value, ylab = 'Total Value', xlab = 'Living Area', main = 'Living Area vs Total Value')
+
+```
+
+Answer: There is a positive linear increase when comparing the living area and the total value. For the plot of Year Built and Total Value the scale is horizontal.
+
+**Exercise 4** Plot the histogram of `total_value`. Do we need a log transformation? If so, further create a `log_total_value` variable in the `R` object `total_data` using the formula $\widetilde{Y}=\log(Y+1).$
+```{r Q4}
+# Histogram
+
+hist(total_data$total_value, main='Histogram of Total Value', xlab='')
+
+# Log Histogram 
+
+total_data$log_total_value <- log(total_data$total_value + 1)
+
+hist(total_data$log_total_value, main='Histogram of Log Total Value', xlab='')
+```
+
+
+## 2. Linear regression, GAM and NN
+### 2.1 Data partition
+**Exercise 5** In total, we have `r nrow(total_data)` observations, which is a decent sample size. Thus, let's partition the data in `total_data` into training **(70%)** and test data **(30%)** and store them as `R` objects `train_data` and `test_data` respectively. Use random seed **`set.seed(7)`**!
+
+```{r Q5}
+set.seed(7)
+total_obs <- dim(total_data)[1]
+
+# Data Partition
+train_data_indices <- sample(1:total_obs, 0.7*total_obs)
+train_data <- total_data[train_data_indices,]
+test_data <- total_data[-train_data_indices,]
+
+total_obs <- dim(total_data)[1]
+
+train_data_indices <- sample(1:total_obs, 0.7*total_obs)
+
+train_data <- total_data[train_data_indices,]
+test_data <- total_data[-train_data_indices,]
+```
+
+### 2.2 Linear regression
+**Exercise 6** Estimate a linear regression model with all **10** predictors `lot_sqft+yr_built+gross_area+living_area+floors+rooms+full_bath+half_bath+fireplace+remodel`
+and name it `lm1`. Note the dependent variable should be `log_total_value`.
+```{r Q6}
+lm1 <- lm(log_total_value~lot_sqft+yr_built+gross_area+living_area+floors+rooms+full_bath+half_bath+fireplace+remodel, data=train_data)
+
+summary(lm1)
+```
+
+
+### 2.3 Generalized additive model
+**Exercise 7** Estimate a linear regression model with all **10** predictors `s(lot_sqft,df=4)+s(yr_built,df=4)+s(gross_area,df=4)+s(living_area,df=4)+floors+rooms+full_bath+half_bath+fireplace+remodel` and name it `lm1`. Note that for numerical predictors `lot_sqft`, `yr_built`, `gross_area` and `living_area`, we specify them as splines with degree-of-freedom=4.
+
+```{r Q7}
+library(gam)
+gam1 <- gam(log_total_value~s(lot_sqft,df=4)+s(yr_built,df=4)+s(gross_area,df=4)+s(living_area,df=4)+floors+rooms+full_bath+half_bath+fireplace+remodel, data=train_data)
+```
+
+**Exercise 8** Plot the estimated coefficient functions for `gam1` using the function `plot()`. Does GAM capture the non-linear effect of numerical predictors `lot_sqft`, `yr_built`, `gross_area` and `living_area`?
+```{r Q8}
+plot(gam1, col='blue')
+```
+
+Answer: Yes, GAM does capture the non-linear effect as shown by the splicing in the polynomial and logarithmic plots.
+
+### 2.4 Neural networks
+Estimate an NN with all **10** predictors, name it `nn1`. For the architecture of NN, let's use two hidden layers with 4 hidden units in the first layer and 4 hidden units in the second layer.
+
+**Exercise 9** Let's first generate the **training dataset** that are needed for the estimation of NN using the function `model.matrix()` and store it in `x_train_nn`. In addition, use the `scale()` function to standardize the predictors by centering with mean and scaling with sd. In addition, combine the `log_total_value` with the standardized predictors stored in `x_train_nn`. Make sure to rename the column name of `x_train_nn` correctly for `log_total_value`!
+
+```{r Q9}
+x_train_nn <- model.matrix(~lot_sqft+yr_built+gross_area+living_area+floors+rooms+full_bath+half_bath+fireplace+remodel, data=train_data)[,-1]
+
+x_mean <- apply(x_train_nn, 2, mean)
+x_sd <- apply(x_train_nn, 2, sd)
+x_train_nn <- scale(x_train_nn, center = x_mean, scale = x_sd)
+
+x_train_nn <- cbind.data.frame(train_data$log_total_value, x_train_nn)
+colnames(x_train_nn)[1] <- 'log_total_value'
+```
+
+**Exercise 10** Let's further generate the **test dataset** that are needed for the out-of-sample prediction evaluation of NN using the function `model.matrix()` and store it in `x_test_nn`. Use the `scale()` function to standardize the predictors by centering with mean and scaling with sd as in Exercise 9.
+```{r Q10}
+x_test_nn <- model.matrix(~lot_sqft+yr_built+gross_area+living_area+floors+rooms+full_bath+half_bath+fireplace+remodel, data = test_data)[,-1]
+
+x_test_nn <- scale(x_test_nn, center = x_mean, scale = x_sd)
+```
+
+**Exercise 11** Let's fit an NN that has two hidden layers with 4 hidden units in the first layer and 4 hidden units in the second layer. Make sure to use random seed **`set.seed(7)`**!
+```{r Q11}
+set.seed(7)
+library(neuralnet)
+nn1 <- neuralnet(log_total_value~., data = x_train_nn, hidden=c(4,4))
+plot(nn1)
+```
+
+
+### 2.5 Model evaluation (out-of-sample)
+Let's now evaluate the prediction performance of the three statistical models `lm1`, `gam1` and `nn1` on the test data. First, let's generate the prediction by each model and store them in `lm1_pred`, `gam1_pred` and `nn1_pred` respectively. Make sure to transform the prediction back to the **original** scale. We then use the `accuracy()` function from the `forecast` package to obtain the error metrics.
+
+```{r Q12}
+library(forecast)
+lm1_pred <- exp(predict(lm1, newdata=test_data))-1
+accuracy(lm1_pred, test_data$total_value) 
+
+
+gam1_pred <- exp(predict(gam1, newdata = test_data))-1
+accuracy(gam1_pred, test_data$total_value)
+
+
+nn1_pred <- exp(predict(nn1, newdata = x_test_nn)[,1])-1
+nn1_pred <- exp(predict(nn1, newdata = x_test_nn)[,1]) - 1
+accuracy(nn1_pred, test_data$total_value)
+```
+
+**Exercise 12** Which model should we choose and why?
+
+Answer: GAM has the lowest MAE, although it is followed closely by neural network. The MAE for lm1 is much larger so we should discard it. I would choose GAM.
+
+### 3. Statistical analysis on the original-scale `total_value`
+**Exercise 13** Let's estimate linear regression and GAM as before but with the **original scale** `total_value` and name them `lm2` and `gam2` respectively.
+
+```{r Q13}
+# lm2 and gam2
+lm2 <- lm(total_value~lot_sqft+yr_built+gross_area+living_area+floors+rooms+full_bath+half_bath+fireplace+remodel, data=train_data)
+
+gam2 <- gam(total_value~s(lot_sqft,df=4)+s(yr_built,df=4)+s(gross_area,df=4)+s(living_area,df=4)+floors+rooms+full_bath+half_bath+fireplace+remodel, data=train_data)
+```
+
+**Exercise 14** Let's estimate NN as before but with the **original scale** `total_value` and name them `nn2`. Note that for the original scale `total_value`, we indeed need to further standardize the dependent variable `total_value` by dividing its maximum value.
+
+```{r Q14}
+# generate training dataset for NN and standardize the predictors
+x_train_nn <- model.matrix(~lot_sqft+yr_built+gross_area+living_area+floors+rooms+full_bath+half_bath+fireplace+remodel, data=train_data)[,-1]
+
+# standardize the dependent variable total_value for numerical stability
+x_mean <- apply(x_train_nn, 2, mean)
+x_sd <- apply(x_train_nn, 2, sd)
+x_train_nn <- scale(x_train_nn, center = x_mean, scale = x_sd)
+
+y_max <- max(train_data$total_value)
+x_train_nn <- cbind.data.frame(train_data$total_value/y_max, x_train_nn)
+colnames(x_train_nn)[1] <- 'total_value'
+
+# generate test dataset for NN and standardize the predictors
+x_test_nn <- model.matrix(~lot_sqft+yr_built+gross_area+living_area+floors+rooms+full_bath+half_bath+fireplace+remodel, data = test_data)[,-1]
+
+x_test_nn <- scale(x_test_nn, center = x_mean, scale = x_sd)
+
+# estimate NN
+set.seed(7)
+nn2 <- neuralnet(total_value~lot_sqft+yr_built+gross_area+living_area+floors+rooms+full_bath+half_bath+fireplace+remodel, data = x_train_nn, hidden=c(4,4))
+plot(nn1)
+```
+
+Let's further conduct model evaluation on the test data.
+```{r Model evaluation}
+lm2_pred <- predict(lm2, newdata=test_data)
+accuracy(lm2_pred, test_data$total_value)
+  
+gam2_pred <- predict(gam2, newdata = test_data)
+accuracy(gam2_pred, test_data$total_value)
+  
+nn2_pred <- predict(nn2, newdata = x_test_nn)[,1] * y_max
+accuracy(nn2_pred, test_data$total_value)
+```
+
+Answer: I would choose gam2 for this model as well as it has the lowest MAE value.

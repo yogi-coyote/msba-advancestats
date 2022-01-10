@@ -1,0 +1,221 @@
+---
+title: "Lab III: Credit Card Marketing Campaign"
+author: "Zifeng Zhao"
+date: "week 06 session 01"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+In this lab, we will build logistic regression, GAM and neural networks for targeted advertising in the credit card marketing campaign.
+
+## 1. Read in Data and Data Partition
+Let's first read in the data from `CreditCard_Ads.csv` and store it in `R` object `total_data`.
+```{r chunk1}
+rm(list=ls())
+total_data <- read.csv("./CreditCard_Ads.csv", header=T, stringsAsFactors=T)
+```
+
+**Exercise 1** In total, we have `10570` observations, which is a decent sample size. Thus, let's partition the data in `total_data` into training **(60%)** and test data **(40%)** and store them as `R` objects `train_data` and `test_data` respectively. Use random seed **`set.seed(7)`**!
+
+```{r Ex1}
+set.seed(7)
+
+total_obs <- dim(total_data)[1]
+
+train_data_indices <- sample(1:total_obs, 0.6*total_obs)
+train_data <- total_data[train_data_indices,]
+test_data <- total_data[-train_data_indices,]
+```
+
+```{r}
+str(train_data)
+str(test_data)
+```
+
+
+**Exercise 1.1** What is the conversion rate in the current dataset?
+
+```{r}
+dim(total_data[total_data$Y=='yes',])[1] / dim(total_data)[1] * 100
+```
+
+
+
+## 2. Logistic Regression
+**Exercise 2** Estimate a logistic regression model for the dependent variable `Y` with all **10** predictors `Age+Default+Housing+Loan+Contact+Previous+Poutcome+EVR+CPI+CCI` based on the **training** data using the function `glm()` and name it `lm_full`. Note that we need to specify the `family` argument in `glm()` as `binomial`.
+
+```{r Ex2}
+lm_full <- glm(Y ~ Age+Default+Housing+Loan+Contact+Previous+Poutcome+EVR+CPI+CCI,
+               family = 'binomial', data = train_data)
+```
+
+```{r}
+summary(lm_full)
+```
+
+
+**Exercise 3** Does higher EVR make the conversion more difficult? How about higher CCI?
+Higher EVR makes conversion more difficult. 
+Higher CCI makes conversion more easy.
+
+### 2.1 Backward selection
+**Exercise 4** It seems that some of the predictors are not statistically significant. First, determine the number of observations in the training data. Second, let's do a backward selection via BIC using the `step()` function and store the final selected model as `lm_bwd`. Make sure you use the **correct** number for the argument `k` in the `step()` function.
+
+```{r Ex4}
+lm_bwd <- step(lm_full, direction = 'backward', k = log(dim(train_data)[1]))
+```
+
+**Exercise 5** Which variable is removed during the backward selection?
+Removed Variables: Housing, Loan, Age, Default
+
+## 3. Generalized Additive Model
+**Exercise 6** Estimate a GAM model with all **10** predictors to capture potential nonlinear relationship. We specify splines with degree-of-freedom=4 for all numerical predictors, including `Age`, `Previous`, `EVR`, `CPI` and `CCI`, and we store the model in `gam1`. Note that we need to specify the `family` argument in `gam()` as `binomial`. We can use `plot()` function to visualize the estimated coefficients and splines for each predictor. Note that we can still interpret the estimated model `gam1` due to the additivity of GAM.
+
+```{r Ex6}
+library(gam)
+gam1 <- gam(Y ~ 
+              s(Age,df=4)
+            +Default
+            +Housing
+            +Loan
+            +Contact
+            +s(Previous,df=4)
+            +Poutcome
+            +s(EVR,df=4)
+            +s(CPI,df=4)
+            +s(CCI,df=4), 
+            family = 'binomial', 
+            data = train_data)
+```
+
+```{r}
+summary(gam1)
+plot(gam1)
+```
+
+
+## 4. Neural Networks
+Estimate an NN with all **10** predictors, name it `nn1`. For the architecture of NN, let's use one hidden layer with 4 hidden units.
+
+**Exercise 7** Let's first generate the **training dataset** that are needed for the estimation of NN using the function `model.matrix()` and store it in `x_train_nn`. In addition, use the `scale()` function to standardize the predictors by centering with mean and scaling with sd. In addition, combine the dependent variable `Y` with the standardized predictors stored in `x_train_nn`. Make sure to rename the colnames of `x_train_nn` correctly for `Y`!
+
+```{r Ex7}
+# generate a data frame with categorical predictors being represented as dummy variables
+x_train_nn <- model.matrix(~Age+Default+Housing+Loan+Contact+Previous+Poutcome+EVR+CPI+CCI, data=train_data)[,-1]
+  
+# standardization
+x_mean <- apply(x_train_nn, 2, mean)
+x_sd <- apply(x_train_nn, 2, sd)
+x_train_nn <- scale(x_train_nn, center=x_mean, scale=x_sd)
+
+# combine with dependent variable Log_price
+x_train_nn <- cbind.data.frame(train_data$Y, x_train_nn)
+colnames(x_train_nn)[1] <- 'Y'
+```
+
+**Exercise 8** Let's further generate the **test dataset** that are needed for the out-of-sample prediction evaluation of NN using the function `model.matrix()` and store it in `x_test_nn`. Use the `scale()` function to standardize the predictors by centering with mean and scaling with sd as in Exercise 8.
+
+```{r Ex8}
+# generate and standardize the data frame for the test data as well
+x_test_nn <- model.matrix(~Age+Default+Housing+Loan+Contact+Previous+Poutcome+EVR+CPI+CCI, data=test_data)[,-1]
+  
+# standardization
+x_test_nn <- scale(x_test_nn, center=x_mean, scale=x_sd)
+```
+
+**Exercise 9** Let's fit an NN that has one hidden layer with 4 hidden units. Make sure to use random seed **`set.seed(7)`**! Don't forget to use **`Y=='yes'`** to convert the categorical variable `Y` to a dummy 0-1 coding. Note that we need to specify the `linear.output` argument in `neuralnet()` as `False`.
+```{r Ex9}
+library(neuralnet)
+set.seed(7)
+nn1 <- neuralnet(Y=='yes'~., data=x_train_nn, hidden=c(4), linear.output=F)
+plot(nn1, rep='best')
+```
+
+
+### 5. Model evaluation (Out-of-sample)
+**Exercise 10** Let's evaluate the prediction performance of `lm_full`, `lm_bwd`, `gam1` and `nn1` on the test data. First, let's generate the prediction by each model using the `predict()` function and store them in `lm_full_pred`, `lm_bwd_pred`, `gam1_pred` and `nn1_pred` respectively. We then use the `confusionMatrix()` function in the `R` package `caret` to automatically generate the error metrics such as accuracy, sensitivity and specificity.
+
+```{r Ex10}
+library(caret)
+lm_full_pred <- predict(lm_full, newdata=test_data, type = 'response')
+lm_bwd_pred <- predict(lm_bwd, newdata=test_data, type = 'response')
+gam1_pred <- predict(gam1, newdata=test_data, type = 'response')
+nn1_pred <- predict(nn1, newdata=x_test_nn, type = 'response')[,1]
+
+lm_full_acc <- confusionMatrix(factor(ifelse(lm_full_pred>0.5, 'yes', 'no')), test_data$Y,
+                               positive='yes')
+lm_bwd_acc <- confusionMatrix(factor(ifelse(lm_bwd_pred>0.5, 'yes', 'no')), test_data$Y,
+                           positive='yes')
+gam1_acc <- confusionMatrix(factor(ifelse(gam1_pred>0.5, 'yes', 'no')), test_data$Y,
+                           positive='yes')
+nn1_acc <- confusionMatrix(factor(ifelse(nn1_pred>0.5, 'yes', 'no')), test_data$Y,
+                           positive='yes')
+```
+
+
+
+
+**Exercise 11** Which model has the highest sensitivity and which one has the highest specificity?
+```{r}
+lm_full_acc
+lm_bwd_acc
+gam1_acc
+nn1_acc
+```
+  
+nn1 has the highest sensitivity.  
+lm_full has highest specificity.  
+
+
+**Exercise 12** Let's further generate a lift chart to compare the prediction performance of the four models using the `lift()` function and `xyplot()` function in the `R` package `caret`. We can set the `cuts` argument in `lift()` as `cuts=200` to save computational time.
+```{r Ex12}
+lift_chart <- lift(test_data$Y~lm_full_pred+lm_bwd_pred+gam1_pred+nn1_pred, class='yes')
+xyplot(lift_chart, auto.key=list(columns=4), main='Lift Chart')
+
+str(lift_chart)
+```
+
+**Exercise 13** Which model should we prefer if we only has the marketing budget to reach out to 20% of the customers?  
+We should use gam1 in this case.
+
+**Exercise 14** Take `gam1` for example. If we want to capture more than 70% of all potential customers (i.e. customers who will say yes), what should be our minimum marketing budget? In other words, what is the percentage of customers we should reach out to?  
+  
+The marketing budget should be for at least 25% of the customers to capture more than 70% of the customers with gam1.
+
+## 6. In-class Exercise (Optional)
+**Exercise 15** Let's manually reproduce the lift chart result for `gam1` at $r=0.2$
+```{r Ex15}
+# total number of customers in the test data
+# N <- 
+# total number of positive customers in the test data
+# M <- 
+# select the 20% customers with the highest predicted probability given by gam1
+# gam1_selected <- 
+# compute m(r), i.e. how many positive customers among the 20% customers selected by gam1
+# mr <- 
+# calculate the lift
+# lift <- 
+```
+
+
+## 7. Asymmetric Profit and Loss (Optional)
+```{r Profit, eval=F}
+total_profit <- function(decision, outcome, unit_profit, unit_cost){
+  profit <- sum(decision=='Send'&outcome=='yes')*unit_profit
+  cost <- sum(decision=='Send'&outcome=='no')*unit_cost
+  return(profit-cost)
+}
+
+unit_profit <- 100
+unit_cost <- 10
+decision_threshold <- unit_cost/(unit_profit+unit_cost)
+lm_full_decision <- ifelse(lm_full_pred> decision_threshold, 'Send', 'Not_Send')
+gam1_decision <- ifelse(gam1_pred> decision_threshold, 'Send', 'Not_Send')
+nn1_decision <- ifelse(nn1_pred> decision_threshold, 'Send', 'Not_Send')
+
+total_profit(decision=lm_full_decision, outcome=test_data$Y, unit_profit=unit_profit, unit_cost=unit_cost)
+total_profit(decision=gam1_decision, outcome=test_data$Y, unit_profit=unit_profit, unit_cost=unit_cost)
+total_profit(decision=nn1_decision, outcome=test_data$Y, unit_profit=unit_profit, unit_cost=unit_cost)
+```

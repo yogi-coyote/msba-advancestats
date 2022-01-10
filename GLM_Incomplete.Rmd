@@ -1,0 +1,169 @@
+---
+title: "Generalized Linear Model (GLM)"
+author: "Zifeng Zhao"
+date: "week 07 session 01"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+In this lab, we will practice implementing generalized linear model such as Poisson regression and Gamma regression in `R`. 
+
+## 1. Poisson regression - Bikeshare dataset
+### 1.1 Data visualization and Data partition
+Let's read in the data stored in `Bikeshare.csv` and further plot a barplot and histogram of the dependent variable `Bikes`.
+```{r chunk1}
+rm(list=ls())
+total_data <- read.csv("./Bikeshare.csv", header=T, stringsAsFactors=T)
+str(total_data)
+total_data$Hour <- factor(total_data$Hour)
+total_data$Month <- factor(total_data$Month, levels=c('Jan','Feb','March','April','May','June','July','Aug','Sept','Oct','Nov','Dec'))
+
+hist(total_data$Bikes, breaks=50, main='Histogram of Bikes')
+barplot(table(total_data$Bikes), main='Barplot of Bikes')
+```
+
+Let's partition the total observed data into a training data (70%) and a test data (30%). To ensure reproducibility, we use the `set.seed()` function in `R` to control the randomness of the training-test split.
+```{r chunk2}
+set.seed(7)
+total_obs <- nrow(total_data)
+train_index <- sample(1:total_obs, 0.7*total_obs)
+train_data <- total_data[train_index,]
+test_data <- total_data[-train_index,]
+```
+
+### 1.2 Linear regression
+We first build a linear regression model for the dependent variable `Bikes` with all predictors `Month+Hour+Workday+Temp+Weather+Windspeed` based on the training data using the function `lm()` and name it `lm1`. We further use the `predict()` function to generate prediction for the test data based on the estimated linear regression (`lm1`). 
+
+```{r chunk3}
+lm1 <- lm(Bikes~Month+Hour+Workday+Temp+Weather+Windspeed, data=train_data)
+lm1_pred <- predict(lm1, newdata=test_data)
+```
+
+What is the problem of the linear regression? Let's use data visualization to investigate it.
+```{r chunk4}
+plot(test_data$Bikes, lm1_pred)
+abline(a=0,b=1,col='red')
+```
+
+### 1.3 Poisson regression
+We now build a Poisson regression model for the dependent variable `Bikes` with all predictors `Month+Hour+Workday+Temp+Weather+Windspeed` based on the training data using the function `glm()` and name it `pr1`. Note that we set the argument `family` as `poisson` for Poisson regression. We further use the `predict()` function to generate prediction for the test data based on the estimated Poisson regression (`pr1`).
+
+```{r chunk5}
+pr1 <- glm(Bikes~Month+Hour+Workday+Temp+Weather+Windspeed, 
+           data = train_data, family = 'poisson')
+```
+
+Let's look at the estimated Poisson regression and see if the estimated coefficients make sense.
+```{r, eval=F, chunk6}
+summary(pr1)
+plot(1:12, c(0,pr1$coefficients[2:12]), main='Estimated coefficients for 12 Months', xlab='Month', ylab='')
+lines(1:12, c(0,pr1$coefficients[2:12]), col='blue')
+plot(0:23, c(0,pr1$coefficients[13:35]), main='Estimated coefficients for 24 Hours', xlab='Hour', ylab='')
+lines(0:23, c(0,pr1$coefficients[13:35]), col='blue')
+```
+
+Let's further use data visualization to investigate the performance of the Poisson regression, which seems to be much better than the linear regression.
+```{r chunk7}
+pr1_pred <- predict(pr1, newdata = test_data, type = 'response')
+plot(test_data$Bikes, pr1_pred)
+abline(a=0, b=1, col='red') # y = x
+```
+
+Let's further use the `accuracy()` function in the `R` package `forecast` to generate MAE, MAPE, RMSE automatically and compare the prediction performance of the linear regression `lm1` and the Poisson regression `pr1`.
+```{r chunk8}
+library(forecast)
+accuracy(lm1_pred, test_data$Bikes)
+accuracy(pr1_pred, test_data$Bikes)
+```
+
+
+### 1.4 Poisson regression with GAM
+We now build a Poisson regression based on GAM to capture potential nonlinear relationship. We specify splines with degree-of-freedom=4 for all numerical predictors, including `Temp` and `Windspeed`, and we store the model in `pr_gam`. We can use `plot()` function to visualize the estimated coefficients and splines for each predictor.
+```{r chunk9}
+library(gam)
+pr_gam <- gam(Bikes~Month+Hour+Workday+s(Temp)+Weather+s(Windspeed), 
+              data = train_data, family = 'poisson')
+```
+
+```{r}
+plot(pr_gam)
+```
+
+Note that the flexibility of GAM does improve the prediction performance of the Poisson regression.
+```{r, eval=F, chunk10}
+pr_gam_pred <- predict(pr_gam, newdata=test_data, type='response')
+accuracy(pr1_pred, test_data$Bikes)
+accuracy(pr_gam_pred, test_data$Bikes)
+```
+
+
+## 2. Gamma regression - UsedCar dataset
+### 2.1 Data visualization and Data partition
+Let's read in the data stored in `UsedCar.csv` and further plot a histogram of the dependent variable `Price`, which is right-skewed. We thus further conduct a log-transformation.
+```{r chunk11}
+rm(list=ls())
+total_data <- read.csv("./UsedCar.csv", header=T, stringsAsFactors=T)
+hist(total_data$Price)
+total_data$Log_price <- log(total_data$Price+1)
+```
+
+Let's partition the total observed data into a training data (80%) and a test data (20%). To ensure reproducibility, we use the `set.seed()` function in `R` to control the randomness of the training-test split.
+```{r chunk12}
+set.seed(7)
+total_obs <- dim(total_data)[1]
+train_data_indices <- sample(1:total_obs, 0.8*total_obs)
+train_data <- total_data[train_data_indices,]
+test_data <- total_data[-train_data_indices,]
+```
+
+### 2.2 Linear regression (Log-normal regression)
+We first build a linear regression model for the **log-scale** dependent variable `Log_price` with all predictors `Age+Mileage+Fuel_Type+Quarterly_Tax+Weight` based on the training data using the function `lm()` and name it `lm1`. We further use the `predict()` function to generate prediction for the test data based on the estimated linear regression (`lm1`). Note that we need to transform the prediction back to the **original scale**!
+
+```{r chunk13}
+lm1 <- lm(Log_price~Age+Mileage+Fuel_Type+Quarterly_Tax+Weight, data=train_data)
+lm1_pred <- exp(predict(lm1, newdata=test_data))-1
+```
+
+
+### 2.3 Gamma regression
+We further build a Gamma regression model for the **original scale** dependent variable `Price` with all predictors `Age+Mileage+Fuel_Type+Quarterly_Tax+Weight` based on the training data using the function `glm()` and name it `gr1`. Note that we set the argument `family` as `Gamma(link='log')` for Gamma regression. We further use the `predict()` function to generate prediction for the test data based on the estimated Gamma regression (`gr1`).
+
+```{r chunk14}
+gr1 <- glm(Price~Age+Mileage+Fuel_Type+Quarterly_Tax+Weight, 
+           data = train_data, family = Gamma(link = 'log'))
+
+
+gr1_pred <- predict(gr1, newdata = test_data, type = 'response')
+```
+
+If we compare the estimated Log-normal regression and the estimated Gamma regression, we can see that the two estimations are similar.
+```{r chunk15}
+summary(lm1)
+summary(gr1)
+```
+
+Let's further use the `accuracy()` function in the `R` package `forecast` to generate MAE, MAPE, RMSE automatically and compare the prediction performance of the Log-normal regression `lm1` and the Gamma regression `pr1`.
+```{r chunk16}
+library(forecast)
+accuracy(lm1_pred, test_data$Price)
+accuracy(gr1_pred, test_data$Price)
+```
+
+
+### 2.4 Gamma regression with GAM
+We now build a Gamma regression based on GAM to capture potential nonlinear relationship. We specify splines with degree-of-freedom=4 for all numerical predictors, including `Age`, `Mileage`, `Quarterly_Tax` and `Weight`, and we store the model in `gr_gam`. We can use `plot()` function to visualize the estimated coefficients and splines for each predictor.
+```{r chunk17}
+gr_gam <- gam(Price~s(Age)+s(Mileage)+Fuel_Type+s(Quarterly_Tax)+s(Weight), 
+              data = train_data, family = Gamma(link = 'log'))
+
+gr_gam_pred <- predict(gr_gam, newdata = test_data, type = 'response')
+
+```
+
+Note that the flexibility of GAM does improve the prediction performance of the Gamma regression.
+```{r, eval=F, chunk18}
+gr_gam_pred <- predict(gr_gam, newdata=test_data, type='response')
+accuracy(gr1_pred, test_data$Price)
+accuracy(gr_gam_pred, test_data$Price)
+```

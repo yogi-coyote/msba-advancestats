@@ -1,0 +1,207 @@
+---
+title: "GAM and NN for Classification in R"
+author: "Zifeng Zhao"
+date: "week 05 session 01"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+In this lab, we will practice implementing Generalized Additive Model (GAM) and Neural Network (NN) in `R`. 
+
+## 1. Data Preparation
+Let's read in the data stored in `PersonalLoan.csv` and further do a 80%-20% training-test split from the very beginning. We use the `set.seed()` function in `R` to control the randomness of the training-test split.
+
+```{r chunk1}
+rm(list=ls())
+set.seed(7)
+total_data <- read.csv("./PersonalLoan.csv", header=T, stringsAsFactors=T)
+total_obs <- dim(total_data)[1]
+## Data Partition: Training v.s. Test split
+train_data_indices <- sample(1:total_obs, 0.8*total_obs)
+train_data <- total_data[train_data_indices,]
+test_data <- total_data[-train_data_indices,]
+```
+
+We first reproduce the data visualization in the slides.
+
+```{r chunk1.1}
+library(ggplot2)
+library(dplyr)
+total_data$Dummy_Outcome <- as.numeric(total_data$Outcome=='Yes')
+
+total_data %>% 
+  ggplot(aes(Income, Dummy_Outcome))+geom_point(size=2, alpha=0.4)+
+  stat_smooth(method="loess", colour="blue", span=0.22, se=T, level=0.9)+
+  xlab("Income")+
+  ylab("Average Probability of Yes")+
+  ggtitle('Outcome v.s. Income')+
+  theme(text=element_text(size=20)) 
+```
+
+
+## 2. Logistic Regression
+We first build a logistic regression model for the dependent variable `Outcome` with all predictors `Age+Experience+Income+Family+CCAvg+Education+Mortgage+CD_Account+Online+CreditCard` based on the **training** data using the function `glm()` and name it `lm_full`.
+
+```{r chunk2}
+## lm1 will regress on the non-reference level outcome!
+lm_full <- glm(Outcome~Age+Experience+Income+Family+CCAvg+Education+Mortgage+CD_Account+Online+CreditCard,
+               family='binomial', data=train_data)
+lm_bwd <- step(lm_full, direction='backward', k=log(nrow(train_data)))
+```
+
+Let's evaluate the prediction performance of `lm_full` and `lm_bwd` on the test data. We first use the `confusionMatrix()` function in the R package `caret` to automatically generate the error metrics such as accuracy, sensitivity and specificity.
+
+```{r chunk3}
+library(caret)
+# Model deployment
+lm_full_pred <- predict(lm_full, newdata=test_data, type='response')
+lm_bwd_pred <- predict(lm_bwd, newdata = test_data, type = 'response')
+
+# Test data error
+lm_full_acc <- confusionMatrix(factor(ifelse(lm_full_pred>0.5, 'Yes', 'No')), test_data$Outcome, positive='Yes')
+
+
+lm_bwd_pred_class <- factor(ifelse(lm_full_pred>0.5, 'Yes', 'No'))
+lm_bwd_acc <- confusionMatrix(lm_bwd_pred_class, test_data$Outcome, positive='Yes')
+```
+
+We further use the `lift()` and `xyplot()` function in the R package `caret` to automatically generate the lift chart.
+```{r chunk3.1}
+## Lift chart
+lift_chart <- lift(test_data$Outcome~lm_full_pred+lm_bwd_pred, class='Yes', cuts=100)
+xyplot(lift_chart, auto.key=list(columns=2), main='Lift Chart')
+
+```
+
+
+## 3. Generalized Additive Model
+We now build a GAM with all predictors to capture potential nonlinear relationship. We specify splines with degree-of-freedom=4 for all numerical predictors, including `Age`, `Experience`, `Income`, `Family`, `CCAvg` and `Mortgage`, and we store the model in `gam1`. We can use `plot()` function to visualize the estimated coefficients and splines for each predictor. Note that we can still interpret the estimated model `gam1` due to the additivity of GAM.
+
+```{r chunk4}
+library(gam)
+## Fit a GAM
+gam1 <- gam(Outcome~s(Age)+s(Experience)+s(Income)+s(Family)+s(CCAvg)+Education+s(Mortgage)+CD_Account+Online+CreditCard, family='binomial', data=train_data)
+plot(gam1, col='blue')
+```
+
+Let's evaluate the out-of-sample prediction performance of `gam1`. Note that GAM indeed further improves the prediction accuracy by a notable margin, especially for sensitivity.
+```{r chunk5}
+## Model evaluation on Test data
+gam1_pred <- predict(gam1, newdata=test_data, type='response')
+gam1_acc <- confusionMatrix(factor(ifelse(gam1_pred>0.5, 'Yes', 'No')), test_data$Outcome, positive='Yes')
+print(gam1_acc)
+```
+```{r}
+lift_chart <- lift(test_data$Outcome~lm_full_pred+lm_bwd_pred+gam1_pred, class='Yes', cuts=100)
+xyplot(lift_chart, auto.key=list(columns=3), main='Lift Chart')
+```
+
+
+## 4. Neural Networks
+We now build an NN with all predictors, which allows both non-linearity and interaction among predictors. Note that the implementation of NN in R is **complicated** and significantly different from linear regression and GAM. It requires more manual configuration.
+
+First of all, NN requires reformatted training data and test data. We first need to reformat the training data and construct a data frame with categorical predictors being represented as dummy variables and store it in `x_train_nn`. We then standardize all predictors $X$ in the data frame `x_train_nn` and combine the data frame with the dependent variable. 
+```{r chunk6}
+# generate a data frame with categorical predictors being represented as dummy variables
+x_train_nn <- model.matrix(~Age+Experience+Income+Family+CCAvg+Education+Mortgage+CD_Account+Online+CreditCard, data=train_data)[,-1]
+  
+# standardization
+x_mean <- apply(x_train_nn, 2, mean)
+x_sd <- apply(x_train_nn, 2, sd)
+x_train_nn <- scale(x_train_nn, center=x_mean, scale=x_sd)
+
+# combine with dependent variable Log_price
+x_train_nn <- cbind.data.frame(train_data$Outcome, x_train_nn)
+colnames(x_train_nn)[1] <- 'Outcome'
+```
+
+Second, we also need to reformat the test data. Note that when standardizing the test data, we use the mean and sd value retrieved from the **training data**. The reason is that the NN model will be estimated based on the training data that are standardized using the mean and sd value retrieved from the **training data**.
+
+```{r chunk7}
+# generate and standardize the data frame for the test data as well
+x_test_nn <- model.matrix(~Age+Experience+Income+Family+CCAvg+Education+Mortgage+CD_Account+Online+CreditCard, data=test_data)[,-1]
+  
+# standardization
+x_test_nn <- scale(x_test_nn, center=x_mean, scale=x_sd)
+```
+
+We now build an NN with all predictors available and store it in `nn1`. For the architecture of `nn1`, let's have one hidden layer with 4 hidden units and keep the activation function as sigmoid. Note that there is randomness in the training of NN due to the random initialization of the optimization. Thus we use `set.seed()` to control the randomness and ensure reproducibility. We can use `plot()` function to visualize the estimated NN, however, it is difficult to interpret the estimated model.
+
+```{r chunk8}
+library(neuralnet)
+set.seed(7)
+nn1 <- neuralnet(Outcome=='Yes'~Age+Experience+Income+Family+CCAvg+EducationG+EducationUG+Mortgage+CD_AccountYes+OnlineYes+CreditCardYes, data=x_train_nn, hidden=c(4), linear.output=F)
+plot(nn1, rep='best')
+```
+
+Let's evaluate the out-of-sample prediction performance of `nn1`. Note that NN further improves the prediction accuracy, especially in terms of sensitivity.
+```{r chunk9}
+nn1_pred <- predict(nn1, newdata=x_test_nn)[,1]
+nn1_acc <- confusionMatrix(factor(ifelse(nn1_pred>0.5, 'Yes', 'No')), test_data$Outcome, positive='Yes')
+print(nn1_acc)
+```
+
+```{r}
+lift_chart <- lift(test_data$Outcome~lm_full_pred+lm_bwd_pred+gam1_pred+nn1_pred, class='Yes')
+xyplot(lift_chart, auto.key=list(columns=4), main='Lift Chart')
+```
+
+
+## 4. In-class Exercise (Optional)
+Let's read the confusion matrix of `nn1` and manually verify its accuracy, sensitivity and specificity.
+```{r chunk10}
+# TP <-
+# FN <-
+# TN <-
+# FP <-
+
+# accuracy <-
+# sensitivity <-
+# specificity <-
+
+# print(c(accuracy, sensitivity, specificity))
+
+
+TP <- 84
+FN <- 10
+TN <- 896
+FP <- 10
+
+accuracy <- 1 - (FN+FP)/(TP+FN+TN+FP)
+sensitivity <- 1 - FN/(TP+FN)
+specificity <- 1 - FP/(TN+FP)
+
+print(c(accuracy, sensitivity, specificity))
+
+```
+
+
+Let's manually generate the lift chart for `gam1` and `nn1`.
+```{r chunk11, eval=F}
+test_obs <- length(test_data$Outcome)
+test_obs_yes <- sum(test_data$Outcome=='Yes')
+
+ordered_outcome_nn <- test_data$Outcome[order(nn1_pred, decreasing=T)]=='Yes'
+plot((1:test_obs)/test_obs, cumsum(ordered_outcome_nn)/test_obs_yes, type='l', col='red')
+
+ordered_outcome_gam <- test_data$Outcome[order(gam1_pred, decreasing=T)]=='Yes'
+lines((1:test_obs)/test_obs, cumsum(ordered_outcome_gam)/test_obs_yes, type='l', col='darkgreen')
+
+ordered_outcome_lm <- test_data$Outcome[order(lm_full_pred, decreasing=T)]=='Yes'
+lines((1:test_obs)/test_obs, cumsum(ordered_outcome_lm)/test_obs_yes, type='l', col='blue')
+
+legend('bottomright', c('lm_full','gam1','nn1'), lty=1, col=c('blue','darkgreen','red'))
+```
+
+
+We can also generate the ROC curves of each statistical model.
+```{r, eval=F}
+## ROC curve
+library(pROC)
+plot(roc(test_data$Outcome, lm_full_pred), print.auc=T, col='blue', main='ROC Curves')
+plot(roc(test_data$Outcome, gam1_pred), print.auc=T, col='green', print.auc.y=.4, add=TRUE)
+plot(roc(test_data$Outcome, nn1_pred), print.auc=T, col='red', print.auc.y=.3, add=TRUE)
+legend('bottomright', c('lm_full','gam1','nn1'), col=c('blue','green','red'), lty=1)
+```

@@ -1,0 +1,132 @@
+---
+title: "Logistic Regression in R"
+author: "Zifeng Zhao"
+date: "week 04 session 01"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+In this lab, we will practice implementing Logistic regression and its backward selection in `R`. 
+
+## 1. Data exploration and visualization
+Let's read in the data stored in `PersonalLoan.csv` and further conduct some data visualization.
+```{r chunk1}
+rm(list=ls())
+total_data <- read.csv("./PersonalLoan.csv", header=T, stringsAsFactors=T)
+```
+
+Let's reproduce the side-by-side boxplot and stacked bar chart in the lecture slides.
+```{r chunk2}
+# Boxplot (for numerical X)
+plot(total_data$Outcome, total_data$Income, main="Outcome v.s. Income",
+  xlab="Outcome", ylab='Income', cex.main=2, cex.lab=1.5)
+
+# Stacked bar chart (for categorical X)
+counts <- table(total_data$Outcome, total_data$CD_Account)
+barplot(counts, col=c("lightblue", "pink"), main="Outcome v.s. CD_Account",
+  xlab="CD_Account", ylab='Outcome', legend=rownames(counts), cex.main=2, cex.lab=1.5)
+```
+
+
+## 2. Logistic Regression
+### 2.1 Data Partition
+Let's partition the total observed data into a training data (80%) and a test data (20%). To ensure reproducibility, we use the `set.seed()` function in `R` to control the randomness of the training-test split.
+```{r chunk3}
+set.seed(7)
+total_obs <- dim(total_data)[1]
+## Data Partition: Training v.s. Test split
+train_data_indices <- sample(1:total_obs, 0.8*total_obs)
+train_data <- total_data[train_data_indices,]
+test_data <- total_data[-train_data_indices,]
+# Record the size of training data and test data
+train_obs <- dim(train_data)[1]
+```
+
+
+### 2.2 Model Estimation
+We first build a logistic regression model for the dependent variable `Outcome` with all predictors `Age+Experience+Income+Family+CCAvg+Education+Mortgage+CD_Account+Online+CreditCard` based on the **training** data using the function `glm()` and name it `lm_full`.
+
+```{r chunk4}
+## lm_full will regress on the non-reference level outcome!
+lm_full <- glm(Outcome ~ 
+                 Age
+               + Experience
+               + Income
+               + Family
+               + CCAvg
+               + Education
+               + Mortgage
+               + CD_Account
+               + Online
+               + CreditCard,
+               family = 'binomial',
+               data = total_data)
+```
+```{r}
+summary(lm_full)
+```
+
+
+### 2.3 Backward Selection via BIC
+For backward selection for logistic regression, we again use the function `step()` in `R`. Note that for `step()`, we need to configure the `direction` argument to `backward` and more importantly, we need to configure the `k` argument to `log(train_obs)`, which corresponds to BIC. The default `k` is 2, which corresponds to AIC. Note that in the `step()` function, we need to specify the largest logistic regression model we would like to consider, which is `lm_full` we fitted above. By default, `step()` will print out each step of the backward selection. 
+
+```{r chunk5}
+lm_bwd <- step(lm_full, direction = 'backward', k = log(dim(train_data)[1]))
+```
+
+Let’s study the output of the backward selection, which predictors are removed during the process?
+```{r chunk6}
+summary(lm_bwd)
+```
+
+
+### 2.4 Model Deployment and Evaluation (test data)
+Now we have two models in hand, `lm_full` and `lm_bwd`. Let's further directly evaluate their prediction performance on the test data. We use the `predict()` function to generate prediction for the test data based on logistic regressions (`lm_full` and `lm_bwd`) estimated on the training data. 
+
+The `predict()` function is a generic function for generating predictions from a fitted statistical model at given predictor values $X$. It works with the `glm` object created by the `glm()` function. Note that we need to specify an additional `type` argument in `predict()` with `type='response'`. This ensures that the predicted value is the probability not the log(odds).
+
+```{r chunk7}
+# Model deployment
+lm_full_pred <- predict(lm_full, newdata = test_data, type = 'response')
+lm_bwd_pred <- predict(lm_bwd, newdata = test_data, type = 'response')
+```
+
+Since the true dependent variable $Y$ on the test data is known, we can further calculate classification error measures such as accuracy, sensitivity and specificity, for the generated predictions. We first use the `confusionMatrix()` function in the R package `caret` to automatically generate the error metrics.
+```{r chunk8}
+# Test data error
+library(caret)
+
+lm_full_pred_class <- factor(ifelse(lm_full_pred > 0.5, "Yes", "No"))
+lm_bwd_pred_class <- factor(ifelse(lm_bwd_pred > 0.5, "Yes", "No"))
+
+lm_full_acc <- confusionMatrix(lm_full_pred_class, test_data$Outcome, positive = "Yes")
+lm_bwd_acc <- confusionMatrix(lm_bwd_pred_class, test_data$Outcome, positive = "Yes")
+
+```
+
+```{r}
+print(lm_full_acc)
+print(lm_bwd_acc)
+```
+
+
+### 3. In-class Exercise
+
+We further manually verify the result for `lm_full` based on the definition of the error metrics.
+```{r chunk9}
+TP <- sum(lm_full_pred > 0.5 & test_data$Outcome == "Yes")
+FN <- sum(lm_full_pred <= 0.5 & test_data$Outcome == "Yes")
+FP <- sum(lm_full_pred > 0.5 & test_data$Outcome == "No")
+TN <- sum(lm_full_pred <= 0.5 & test_data$Outcome == "No")
+test_obs <- dim(test_data)[1]
+
+ACC <- 1 - (FN + FP)/test_obs
+FNR <- FN/(FN+TP)
+sensitivity <- 1 - FNR
+FPR <- FP/(TN+FP)
+specificity <- 1-FPR
+
+print(c(ACC,sensitivity,specificity))
+```
+

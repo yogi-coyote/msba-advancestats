@@ -1,0 +1,208 @@
+---
+title: "Lab IV: Pricing Insurance Risks"
+author: "Zifeng Zhao"
+date: "week 07 session 02"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+In this lab, we will build logistic regression, GAM, neural networks and GLM (Log-normal and Gamma regression) for pricing insurance policies.
+
+## 1. Modeling Insurance Claim Frequency
+### 1.1 Read in data and data partition
+Let's first read in the data from `ClaimFreq.csv` and store it in `R` object `total_data`. We further partition the total observed data into a training data (60%) and a test data (40%). To ensure reproducibility, we use the `set.seed()` function in `R` to control the randomness of the training-test split.
+
+```{r chunk1}
+rm(list=ls())
+total_data <- read.csv("./ClaimFreq.csv", header=T, stringsAsFactors=T)
+total_obs <- dim(total_data)[1]
+
+## Data Partition
+set.seed(7)
+train_index <- sample(1:total_obs, 0.6*total_obs)
+train_data <- total_data[train_index,]
+test_data <- total_data[-train_index,]
+```
+
+**Exercise 1** What is the proportion of drivers having an accident in the current dataset `total_data`?
+```{r Ex1}
+#summary(total_data)
+nrow(total_data[total_data$Accident == 'Yes',]) / nrow(total_data) * 100
+```
+
+
+### 1.2 Logistic regression
+We first estimate a logistic regression model for the dependent variable `Accident` with all **8** predictors `Gender+HP+Credit+Years+Marital+Vehicle+Miles+Family` based on the training data using the function `glm()` and name it `lm1`. Note that we need to specify the `family` argument in `glm()` as `binomial`.
+```{r chunk2}
+lm1 <- glm(Accident~Gender+HP+Credit+Years+Marital+Vehicle+Miles+Family, family='binomial', data=train_data)
+```
+
+**Exercise 2** Which type of vehicle (Car, Truck, Utility, Van) has the highest probability of having an accident? Does an individual with a better credit history seem to be better drivers?
+```{r}
+summary(lm1)
+```
+Truck has the highest probability of having an accident.  
+Individual with better credit history are better as they have lower probability of having an accident.
+
+### 1.3 Generalized Additive Model
+**Exercise 3** Estimate a GAM model with all **8** predictors to capture potential nonlinear relationship. We specify splines with degree-of-freedom=4 for all numerical predictors, including `HP`, `Credit`, `Years`, `Miles` and `Family`, and we store the model in `gam1`. Note that we need to specify the `family` argument in `gam()` as `binomial`. We can use `plot()` function to visualize the estimated coefficients and splines for each predictor. Note that we can still interpret the estimated model `gam1` due to the additivity of GAM.
+
+```{r Ex3}
+library(gam)
+gam1 <- gam(Accident~Gender+s(HP)+s(Credit)+s(Years)+Marital+Vehicle+s(Miles)+s(Family), family='binomial', data=train_data)
+```
+```{r}
+plot(gam1)
+```
+
+
+### 1.4 Neural Networks
+Estimate an NN with all **8** predictors, name it `nn1`. For the architecture of NN, let's use one hidden layer with 4 hidden units.
+
+We first generate the training data that are needed for the estimation of NN using the function `model.matrix()` and store it in `x_train_nn`. In addition, we use the `scale()` function to standardize the predictors by centering with mean and scaling with sd. In addition, combine the dependent variable `Accident` with the standardized predictors stored in `x_train_nn`. Lastly, we rename the colnames of `x_train_nn` correctly for `Accident`.
+```{r chunk3}
+# generate a data frame with categorical predictors being represented as dummy variables
+x_train_nn <- model.matrix(~Gender+HP+Credit+Years+Marital+Vehicle+Miles+Family, data=train_data)[,-1]
+# standardization
+x_mean <- apply(x_train_nn, 2, mean)
+x_sd <- apply(x_train_nn, 2, sd)
+x_train_nn <- scale(x_train_nn, center=x_mean, scale=x_sd)
+
+# combine with dependent variable Log_price
+x_train_nn <- cbind.data.frame(train_data$Accident, x_train_nn)
+colnames(x_train_nn)[1] <- 'Accident'
+```
+
+We further generate the **test data** that are needed for the out-of-sample prediction evaluation of NN using the function `model.matrix()` and store it in `x_test_nn`. Use the `scale()` function to standardize the predictors by centering with mean and scaling with sd.
+```{r chunk4}
+# generate and standardize the data frame for the test data as well
+x_test_nn <- model.matrix(~Gender+HP+Credit+Years+Marital+Vehicle+Miles+Family, data=test_data)[,-1]
+# standardization
+x_test_nn <- scale(x_test_nn, center=x_mean, scale=x_sd)
+```
+
+
+**Exercise 4** Let's fit an NN that has one hidden layer with 4 hidden units. Make sure to use random seed **`set.seed(7)`**! Don't forget to use **`Accident=='Yes'`** to convert the categorical variable `Accident` to a dummy 0-1 coding. Note that we need to specify the `linear.output` argument in `neuralnet()` as `False`.
+```{r Ex5}
+set.seed(7)
+library(neuralnet)
+nn1 <- neuralnet(Accident=='Yes'~.,
+                 data=x_train_nn, linear.output=F, hidden=c(4))
+```
+
+```{r}
+plot(nn1, 'best')
+```
+
+
+### 1.5 Model evaluation (Out-of-sample)
+**Exercise 5** Let's evaluate the prediction performance of `lm1`, `gam1` and `nn1` on the test data. First, let's generate the prediction by each model using the `predict()` function and store them in `lm1_pred`, `gam1_pred` and `nn1_pred` respectively. We then use the `confusionMatrix()` function in the `R` package `caret` to automatically generate the error metrics such as accuracy, sensitivity and specificity.
+
+```{r Ex6}
+## Model deployment
+lm1_pred <- predict(lm1, newdata = test_data, type = 'response')
+gam1_pred <- predict(gam1, newdata = test_data, type = 'response')
+nn1_pred <- predict(nn1, newdata = x_test_nn, type = 'response')[,1]
+
+## Test data error
+library(caret)
+lm1_acc <- confusionMatrix(factor(ifelse(lm1_pred > 0.5, 'Yes', 'No')), 
+                           test_data$Accident, positive = 'Yes')
+gam1_acc <- confusionMatrix(factor(ifelse(gam1_pred > 0.5, 'Yes', 'No')), 
+                           test_data$Accident, positive = 'Yes')
+nn1_acc <- confusionMatrix(factor(ifelse(nn1_pred > 0.5, 'Yes', 'No')), 
+                           test_data$Accident, positive = 'Yes')
+```
+
+```{r}
+lm1_acc$byClass
+gam1_acc$byClass
+nn1_acc$byClass
+```
+
+
+**Exercise 6** Which model has the highest sensitivity and which one has the highest specificity?
+Sensitivity: nn1 - 0.29562044
+Specificity: lm1 - 0.95779221
+
+**Exercise 7** Let's further generate a lift chart to compare the prediction performance of the four models using the `lift()` function and `xyplot()` function in the `R` package `caret`. We can set the `cuts` argument in `lift()` as `cuts=200` to save computational time.
+```{r Ex8}
+lift_chart <- lift(test_data$Accident~lm1_pred+gam1_pred+nn1_pred, class='Yes',cuts = 100)
+xyplot(lift_chart, auto.key=list(columns=3), main='Lift Chart')
+```
+
+**Exercise 8** Take `nn1` for example. If we want to **filter out** almost all potential bad drivers (i.e. drivers whose `Accident=Yes`) in the test data, **approximately** what is the percentage of drivers we can take in to offer an insurance policy? (Hint: Think about how the lift chart is generated by ranking drivers by their probability of having an accident.)
+Answer: We can take in 55% of the drivers to filter out close to 100% of the bad drivers.  
+  
+## 2. Modeling Insurance Claim Severity 
+### 2.1 Read in data and data partition
+Let's first read in the data from `ClaimSeverity.csv` and store it in `R` object `total_data`. We further plot a histogram of the dependent variable `Amount`, which is right-skewed. We thus further conduct a log-transformation. We in addition partition the total observed data into a training data (70%) and a test data (30%). To ensure reproducibility, we use the `set.seed()` function in `R` to control the randomness of the training-test split.
+
+```{r chunk5}
+rm(list=ls())
+total_data <- read.csv("./ClaimSeverity.csv", header=T, stringsAsFactors=T)
+total_obs <- dim(total_data)[1]
+hist(total_data$Amount)
+total_data$Log_Amount <- log(total_data$Amount+1)
+
+## Data Partition
+set.seed(7)
+train_data_indices <- sample(1:total_obs, 0.7*total_obs)
+train_data <- total_data[train_data_indices,]
+test_data <- total_data[-train_data_indices,]
+```
+
+
+### 2.2 Log-normal regression
+We first build a linear regression for the **log-scale** dependent variable `Log_Amount` with all **7** predictors `Area+VehPower+VehAge+DrivAge+Credit+FuelType+Density` based on the training data using the function `lm()` and name it `lm1`. We further use the `predict()` function to generate prediction for the test data based on the estimated linear regression (`lm1`). Note that we need to transform the prediction back to the **original scale**.
+
+```{r chunk6}
+lm1 <- lm(Log_Amount~Area+VehPower+VehAge+DrivAge+Credit+FuelType+Density, data=train_data)
+lm1_pred <- exp(predict(lm1, newdata=test_data))-1
+```
+
+### 2.3 Gamma regression
+**Exercise 9** We further build a Gamma regression model for the **original scale** dependent variable `Amount` with all predictors `Area+VehPower+VehAge+DrivAge+Credit+FuelType+Density` based on the training data using the function `glm()` and name it `gr1`. Note that we set the argument `family` as `Gamma(link='log')` for Gamma regression. 
+
+```{r Ex10}
+gr1 <- glm(Amount~Area+VehPower+VehAge+DrivAge+Credit+FuelType+Density, 
+           data = train_data, family = Gamma(link='log'))
+```
+```{r}
+summary(gr1)
+```
+
+
+**Exercise 10** Among Area A to F, which Area has the highest expected claim amount per Accident? (Though this result is not statistically significant.)  
+Answer: Area E  
+  
+### 2.4 Model evaluation
+**Exercise 11** We further use the `predict()` function to generate prediction for the test data based on the estimated Gamma regression (`gr1`). In addition, let's use the `accuracy()` function in the `R` package `forecast` to generate MAE, MAPE, RMSE automatically and compare the prediction performance of the Log-normal regression `lm1` and the Gamma regression `gr1`.
+
+```{r Ex11}
+gr1_pred <- predict(gr1, newdata = test_data, type = 'response')
+
+library(forecast)
+accuracy(lm1_pred, test_data$Amount)
+accuracy(gr1_pred, test_data$Amount)
+```
+
+**Exercise 12** Which model has a smaller MAE? Note that the MAPE is not very meaningful due to outliers. Instead, we can look at MAE divided by `mean(test_data$Amount)`.  
+gr1 has smaller MAE.  
+```{r}
+#lm1 MAPE
+796.2756 / mean(test_data$Amount) * 100
+
+#gr1 MAPE
+793.2181 / mean(test_data$Amount) * 100
+```
+  
+
+**Exercise 13** For insurance applications, an important prediction performance metric is the total error made on the **entire** test data. In other words, if we view the entire test data as an insurance portfolio of many drivers, we look at the difference between the predicted total loss by the statistical model and the actual total loss of the test data. Which model does a better job?
+```{r Ex13}
+sum(test_data$Amount) - sum(lm1_pred)
+sum(test_data$Amount) - sum(gr1_pred)
+```
+gr1 does a much better job than lm1
